@@ -1,0 +1,80 @@
+type BodyParts = struct {
+  head_type: u8,
+  body_type: u8,
+  arms_type: u8,
+  legs_type: u8,
+};
+
+type AgentView = struct {
+  agent_id: actor_id,
+  name: str,
+  operator: actor_id,
+  body_parts: BodyParts,
+  wins: u32,
+  losses: u32,
+  total_staked: u128,
+  total_earned: u128,
+};
+
+type MatchView = struct {
+  id: u64,
+  agent_a: actor_id,
+  agent_b: opt actor_id,
+  agent_a_name: str,
+  agent_b_name: opt str,
+  stake: u128,
+  status: MatchStatus,
+  seed: u64,
+  winner: opt actor_id,
+  total_bet_pool: u128,
+};
+
+type MatchStatus = enum {
+  Waiting,
+  Ready,
+  Completed,
+  Claimed,
+};
+
+constructor {
+  New : (owner: actor_id);
+};
+
+service AgentColosseum {
+  ClaimBetWinnings : (match_id: u64) -> str;
+  ClaimWinnings : (match_id: u64) -> str;
+  CreateMatch : (stake: u128) -> u64;
+  JoinMatch : (match_id: u64) -> null;
+  PlaceBet : (match_id: u64, agent_id: actor_id) -> null;
+  RegisterAgent : (name: str, body_parts: BodyParts, strategy_hash: [u8, 32], strategy_url: str) -> actor_id;
+  SetBattleResult : (match_id: u64, winner: actor_id, timeline_hash: [u8, 32]) -> null;
+  SetPaused : (paused: bool) -> null;
+  SetProtocolFee : (fee_bps: u16) -> null;
+  UpdateAgent : (name: opt str, body_parts: opt BodyParts, strategy_hash: opt [u8, 32], strategy_url: opt str) -> null;
+  query GetAgent : (agent_id: actor_id) -> opt AgentView;
+  query GetConfig : () -> struct { u16, bool, u64 };
+  query GetMatch : (match_id: u64) -> opt MatchView;
+  query ListActiveMatches : () -> vec MatchView;
+  query ListAgents : (offset: u32, limit: u32) -> vec AgentView;
+  query ListMatches : (offset: u32, limit: u32) -> vec MatchView;
+};
+
+service AgentColosseumMut {
+  ClaimBetWinnings : (match_id: u64) -> str;
+  ClaimWinnings : (match_id: u64) -> str;
+  CreateMatch : (stake: u128) -> u64;
+  JoinMatch : (match_id: u64) -> null;
+  PlaceBet : (match_id: u64, agent_id: actor_id) -> null;
+  RegisterAgent : (name: str, body_parts: BodyParts, strategy_hash: [u8, 32], strategy_url: str) -> actor_id;
+  SetBattleResult : (match_id: u64, winner: actor_id, timeline_hash: [u8, 32]) -> null;
+  SetPaused : (paused: bool) -> null;
+  SetProtocolFee : (fee_bps: u16) -> null;
+  UpdateAgent : (name: opt str, body_parts: opt BodyParts, strategy_hash: opt [u8, 32], strategy_url: opt str) -> null;
+  query GetAgent : (agent_id: actor_id) -> opt AgentView;
+  query GetConfig : () -> struct { u16, bool, u64 };
+  query GetMatch : (match_id: u64) -> opt MatchView;
+  query ListActiveMatches : () -> vec MatchView;
+  query ListAgents : (offset: u32, limit: u32) -> vec AgentView;
+  query ListMatches : (offset: u32, limit: u32) -> vec MatchView;
+};
+
