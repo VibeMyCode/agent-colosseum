@@ -69,7 +69,6 @@ dependencies = [
 name = "agent-colosseum-app"
 version = "0.1.0"
 dependencies = [
- "gstd",
  "sails-rs",
 ]
 
