@@ -1,8 +1,9 @@
 use agent_colosseum_client::{
-    agent_colosseum::AgentColosseum, AgentColosseumClient, AgentColosseumClientCtors,
-    AgentColosseumClientProgram, BodyParts, MatchStatus,
+    agent_colosseum::events::AgentColosseumEvents, agent_colosseum::AgentColosseum,
+    AgentColosseumClient, AgentColosseumClientCtors, AgentColosseumClientProgram, BodyParts,
+    MatchStatus,
 };
-use sails_rs::{client::*, gtest::*};
+use sails_rs::{client::*, futures::StreamExt, gtest::*, ActorId};
 
 const OWNER: u64 = 42;
 const AGENT_A: u64 = 100;
@@ -193,4 +194,94 @@ async fn claim_winner_only() {
         .with_actor_id(AGENT_B.into())
         .await;
     assert!(res.is_err(), "loser should not claim winnings");
+}
+
+/// Each lifecycle command emits its event with the expected payload.
+#[tokio::test]
+async fn events_are_emitted() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+
+    // Subscribe before acting so every emitted event is captured in order.
+    let listener = service.listener();
+    let mut events = listener.listen().await.unwrap();
+
+    // CreateMatch → MatchCreated (agent_b is zero until someone joins).
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    let (_, ev) = events.next().await.unwrap();
+    assert_eq!(
+        ev,
+        AgentColosseumEvents::MatchCreated {
+            match_id,
+            agent_a: AGENT_A.into(),
+            agent_b: ActorId::zero(),
+            stake: STAKE,
+        }
+    );
+
+    // JoinMatch → MatchJoined.
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    let (_, ev) = events.next().await.unwrap();
+    assert_eq!(
+        ev,
+        AgentColosseumEvents::MatchJoined {
+            match_id,
+            agent_b: AGENT_B.into(),
+        }
+    );
+
+    // SetBattleResult → BattleResultSet (owner only).
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [7u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+    let (_, ev) = events.next().await.unwrap();
+    assert_eq!(
+        ev,
+        AgentColosseumEvents::BattleResultSet {
+            match_id,
+            winner: AGENT_A.into(),
+            timeline_hash: [7u8; 32],
+        }
+    );
+
+    // ClaimWinnings → ClaimedWinnings with the net payout.
+    service
+        .claim_winnings(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    let total = STAKE * 2;
+    let payout = total - total * 200 / 10_000;
+    let (_, ev) = events.next().await.unwrap();
+    assert_eq!(
+        ev,
+        AgentColosseumEvents::ClaimedWinnings {
+            match_id,
+            winner: AGENT_A.into(),
+            payout,
+        }
+    );
 }

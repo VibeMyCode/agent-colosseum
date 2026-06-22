@@ -81,5 +81,33 @@ service AgentColosseum {
   query ListActiveMatches : () -> vec MatchView;
   query ListAgents : (offset: u32, limit: u32) -> vec AgentView;
   query ListMatches : (offset: u32, limit: u32) -> vec MatchView;
+
+  events {
+    /// A new match was opened by `agent_a`. `agent_b` is zero until someone
+    /// joins.
+    MatchCreated: struct {
+      match_id: u64,
+      agent_a: actor_id,
+      agent_b: actor_id,
+      stake: u128,
+    };
+    /// `agent_b` joined a waiting match, which is now Ready.
+    MatchJoined: struct {
+      match_id: u64,
+      agent_b: actor_id,
+    };
+    /// The owner recorded the verified battle outcome.
+    BattleResultSet: struct {
+      match_id: u64,
+      winner: actor_id,
+      timeline_hash: [u8, 32],
+    };
+    /// The winner claimed the pooled payout (stake*2 minus protocol fee).
+    ClaimedWinnings: struct {
+      match_id: u64,
+      winner: actor_id,
+      payout: u128,
+    };
+  }
 };
 

@@ -128,6 +128,39 @@ pub struct AgentView {
     pub total_earned: u128,
 }
 
+// ─── Events ──────────────────────────────────────────────────────────────
+
+/// Events emitted by the `AgentColosseum` service so off-chain subscribers
+/// (indexers, the frontend) can follow match lifecycle without polling.
+#[sails_rs::event]
+#[derive(Encode, TypeInfo)]
+#[codec(crate = sails_rs::scale_codec)]
+#[scale_info(crate = sails_rs::scale_info)]
+pub enum Event {
+    /// A new match was opened by `agent_a`. `agent_b` is zero until someone
+    /// joins.
+    MatchCreated {
+        match_id: u64,
+        agent_a: ActorId,
+        agent_b: ActorId,
+        stake: u128,
+    },
+    /// `agent_b` joined a waiting match, which is now Ready.
+    MatchJoined { match_id: u64, agent_b: ActorId },
+    /// The owner recorded the verified battle outcome.
+    BattleResultSet {
+        match_id: u64,
+        winner: ActorId,
+        timeline_hash: [u8; 32],
+    },
+    /// The winner claimed the pooled payout (stake*2 minus protocol fee).
+    ClaimedWinnings {
+        match_id: u64,
+        winner: ActorId,
+        payout: u128,
+    },
+}
+
 // ─── Static State ────────────────────────────────────────────────────────
 
 static mut AGENTS: Vec<(ActorId, AgentConfig)> = Vec::new();
@@ -204,7 +237,7 @@ impl AgentColosseum {
     }
 }
 
-#[sails_rs::service]
+#[sails_rs::service(events = Event)]
 impl AgentColosseum {
     // ─── Agent Management ─────────────────────────────────────────────
 
@@ -317,7 +350,7 @@ impl AgentColosseum {
         if msg::value() < stake {
             panic!("InsufficientValue");
         }
-        unsafe {
+        let match_id = unsafe {
             if PAUSED {
                 panic!("Paused");
             }
@@ -344,7 +377,15 @@ impl AgentColosseum {
                 config.total_staked += stake;
             }
             match_id
-        }
+        };
+        self.emit_event(Event::MatchCreated {
+            match_id,
+            agent_a: operator,
+            agent_b: ActorId::zero(),
+            stake,
+        })
+        .expect("failed to emit MatchCreated");
+        match_id
     }
 
     /// Join a waiting match as agent B, matching the stake with attached value.
@@ -382,6 +423,11 @@ impl AgentColosseum {
                 config.total_staked += stake;
             }
         }
+        self.emit_event(Event::MatchJoined {
+            match_id,
+            agent_b: operator,
+        })
+        .expect("failed to emit MatchJoined");
     }
 
     /// Record the outcome of a Ready match. OWNER-only: the off-chain battle
@@ -422,6 +468,12 @@ impl AgentColosseum {
                 config.losses += 1;
             }
         }
+        self.emit_event(Event::BattleResultSet {
+            match_id,
+            winner,
+            timeline_hash,
+        })
+        .expect("failed to emit BattleResultSet");
     }
 
     /// Claim winnings for a Completed match. Only the recorded winner may claim.
@@ -431,7 +483,7 @@ impl AgentColosseum {
     #[export]
     pub fn claim_winnings(&mut self, match_id: u64) -> String {
         let caller = msg::source();
-        unsafe {
+        let (winner, payout) = unsafe {
             let (winner, payout) = {
                 let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
                 match entry {
@@ -457,9 +509,16 @@ impl AgentColosseum {
             if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &winner) {
                 config.total_earned += payout;
             }
-            // v2: transfer `payout` to `winner` via value transfer.
-            format!("Claimed:{}", payout)
-        }
+            (winner, payout)
+        };
+        self.emit_event(Event::ClaimedWinnings {
+            match_id,
+            winner,
+            payout,
+        })
+        .expect("failed to emit ClaimedWinnings");
+        // v2: transfer `payout` to `winner` via value transfer.
+        format!("Claimed:{}", payout)
     }
 
     // ─── Queries ──────────────────────────────────────────────────────
