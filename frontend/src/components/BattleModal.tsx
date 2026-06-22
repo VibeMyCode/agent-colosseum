@@ -7,6 +7,7 @@ import {
   ShieldCheck,
   Lightning,
   Gavel,
+  Robot,
 } from "@phosphor-icons/react";
 import { Modal } from "@/components/ui/Modal";
 import { AgentAvatar } from "@/components/AgentAvatar";
@@ -43,10 +44,12 @@ export function BattleModal({
   matchId,
   open,
   onClose,
+  onPlayBot,
 }: {
   matchId: number | null;
   open: boolean;
   onClose: () => void;
+  onPlayBot?: (m: Match) => void;
 }) {
   const { matches, agents, myActorId, config } = useColosseum();
   const { account } = useWallet();
@@ -191,6 +194,21 @@ export function BattleModal({
                 <button onClick={join} disabled={busy} className="btn-ember w-full !py-3">
                   <Sword size={18} weight="fill" />
                   {busy ? "Accepting…" : `Accept Challenge · ${formatVara(match.stake)} VARA`}
+                </button>
+              )}
+
+              {onPlayBot && (
+                <div className="flex items-center gap-3">
+                  <div className="h-px flex-1 bg-white/8" />
+                  <span className="text-[11px] uppercase tracking-wider text-zinc-600">or</span>
+                  <div className="h-px flex-1 bg-white/8" />
+                </div>
+              )}
+              {onPlayBot && (
+                <button onClick={() => onPlayBot(match)} className="btn-ghost w-full">
+                  <Robot size={18} weight="fill" className="text-plasma-300" />
+                  Play with Bot
+                  <span className="ml-1 text-xs font-normal text-zinc-500">· practice, offline</span>
                 </button>
               )}
             </>

@@ -1,11 +1,20 @@
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Plus, Sword, Sparkle } from "@phosphor-icons/react";
+import { Plus, Sword, Sparkle, SignIn, Robot } from "@phosphor-icons/react";
 import { MatchCard } from "@/components/MatchCard";
 import { BattleModal } from "@/components/BattleModal";
 import { CreateMatchModal } from "@/components/CreateMatchModal";
+import { JoinByIdModal } from "@/components/JoinByIdModal";
+import { BotBattleModal } from "@/components/BotBattleModal";
 import { useColosseum } from "@/providers/colosseum-provider";
-import type { Match, MatchStatus } from "@/lib/colosseum";
+import type { BodyParts, Match, MatchStatus } from "@/lib/colosseum";
+
+const DEFAULT_PARTS: BodyParts = {
+  head_type: 0,
+  body_type: 1,
+  arms_type: 0,
+  legs_type: 2,
+};
 
 type Filter = "all" | "open" | "live" | "decided" | "mine";
 
@@ -20,10 +29,22 @@ const FILTERS: { id: Filter; label: string }[] = [
 const DECIDED: MatchStatus[] = ["Completed", "Claimed"];
 
 export function MatchArena() {
-  const { matches, loading, ready, myActorId } = useColosseum();
+  const { matches, loading, ready, myActorId, myAgent, config } = useColosseum();
   const [filter, setFilter] = useState<Filter>("all");
   const [selected, setSelected] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [botOpen, setBotOpen] = useState(false);
+  const [botStake, setBotStake] = useState<bigint>(0n);
+
+  const playerName = myAgent?.name || "CHALLENGER";
+  const playerParts = myAgent?.bodyParts || DEFAULT_PARTS;
+
+  function startBot(stake: bigint) {
+    setSelected(null);
+    setBotStake(stake);
+    setBotOpen(true);
+  }
 
   const counts = useMemo(
     () => ({
@@ -69,10 +90,20 @@ export function MatchArena() {
             </span>
           )}
         </div>
-        <button onClick={() => setCreating(true)} className="btn-ember !px-4 !py-2 text-sm">
-          <Plus size={16} weight="bold" />
-          Open Match
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => startBot(0n)} className="btn-ghost !px-3.5 !py-2 text-sm">
+            <Robot size={16} weight="fill" className="text-plasma-300" />
+            Play with Bot
+          </button>
+          <button onClick={() => setJoining(true)} className="btn-ghost !px-3.5 !py-2 text-sm">
+            <SignIn size={16} weight="bold" />
+            Join by ID
+          </button>
+          <button onClick={() => setCreating(true)} className="btn-ember !px-4 !py-2 text-sm">
+            <Plus size={16} weight="bold" />
+            Open Match
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -126,8 +157,22 @@ export function MatchArena() {
         matchId={selected}
         open={selected !== null}
         onClose={() => setSelected(null)}
+        onPlayBot={(m) => startBot(m.stake)}
       />
       <CreateMatchModal open={creating} onClose={() => setCreating(false)} />
+      <JoinByIdModal
+        open={joining}
+        onClose={() => setJoining(false)}
+        onFound={(id) => setSelected(id)}
+      />
+      <BotBattleModal
+        open={botOpen}
+        onClose={() => setBotOpen(false)}
+        playerName={playerName}
+        playerParts={playerParts}
+        initialStake={botStake}
+        feeBps={config?.feeBps ?? 200}
+      />
     </section>
   );
 }

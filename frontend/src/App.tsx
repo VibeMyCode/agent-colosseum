@@ -24,6 +24,17 @@ export function App() {
           <Hero />
         </motion.div>
 
+        {/* Your Agent — full width, between the hero and the arena */}
+        <motion.div
+          id="forge"
+          className="scroll-mt-24"
+          initial="hidden"
+          animate="show"
+          variants={fadeUp}
+        >
+          <AgentForge />
+        </motion.div>
+
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_360px]">
           {/* Arena */}
           <motion.div
@@ -36,21 +47,10 @@ export function App() {
             <MatchArena />
           </motion.div>
 
-          {/* Sidebar: forge + feed */}
-          <div className="space-y-8">
-            <motion.div
-              id="forge"
-              className="scroll-mt-24"
-              initial="hidden"
-              animate="show"
-              variants={fadeUp}
-            >
-              <AgentForge />
-            </motion.div>
-            <motion.div initial="hidden" animate="show" variants={fadeUp}>
-              <EventFeed />
-            </motion.div>
-          </div>
+          {/* Sidebar: live feed */}
+          <motion.div initial="hidden" animate="show" variants={fadeUp}>
+            <EventFeed />
+          </motion.div>
         </div>
       </main>
 

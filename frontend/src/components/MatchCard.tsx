@@ -1,8 +1,10 @@
 import { motion } from "framer-motion";
-import { Coins, Crown, Question } from "@phosphor-icons/react";
+import { Coins, Crown, Question, LockKey } from "@phosphor-icons/react";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { ShareLink } from "@/components/ui/ShareLink";
 import { useColosseum } from "@/providers/colosseum-provider";
+import { useChainApi } from "@/providers/chain-provider";
 import {
   formatVara,
   sameActor,
@@ -10,6 +12,7 @@ import {
   type BodyParts,
   type Match,
 } from "@/lib/colosseum";
+import { buildMatchLink, isPrivate } from "@/lib/share";
 
 const FALLBACK: BodyParts = {
   head_type: 0,
@@ -34,23 +37,40 @@ export function MatchCard({
   onOpen: (m: Match) => void;
 }) {
   const { agents } = useColosseum();
+  const { programId } = useChainApi();
   const aParts = partsFor(agents, match.agentA) ?? FALLBACK;
   const bParts = partsFor(agents, match.agentB);
 
   const aWon = sameActor(match.winner, match.agentA);
   const bWon = sameActor(match.winner, match.agentB);
+  const priv = isPrivate(programId, match.id);
 
   return (
-    <motion.button
+    <motion.div
       layout
+      role="button"
+      tabIndex={0}
       onClick={() => onOpen(match)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(match);
+        }
+      }}
       whileHover={{ y: -3 }}
       whileTap={{ scale: 0.99 }}
       transition={{ type: "spring", stiffness: 300, damping: 24 }}
-      className="glass glass-hover group w-full text-left"
+      className="glass glass-hover group w-full cursor-pointer text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ember-500/40"
     >
       <div className="flex items-center justify-between px-4 pt-4">
-        <StatusBadge status={match.status} />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={match.status} />
+          {priv && (
+            <span className="chip border border-plasma-500/30 bg-plasma-500/10 text-plasma-300">
+              <LockKey size={11} weight="fill" /> Private
+            </span>
+          )}
+        </div>
         <span className="font-mono text-xs text-zinc-600">#{match.id}</span>
       </div>
 
@@ -84,17 +104,29 @@ export function MatchCard({
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between border-t hairline px-4 py-3">
-        <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
-          <Coins size={13} weight="fill" className="text-ember-400/80" />
-          Stake
-        </span>
-        <span className="font-display text-sm font-bold text-zinc-100">
-          {formatVara(match.stake)}{" "}
-          <span className="text-xs font-medium text-zinc-500">VARA</span>
-        </span>
+      <div className="border-t hairline px-4 py-3">
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-1.5 text-xs text-zinc-500">
+            <Coins size={13} weight="fill" className="text-ember-400/80" />
+            Stake
+          </span>
+          <span className="font-display text-sm font-bold text-zinc-100">
+            {formatVara(match.stake)}{" "}
+            <span className="text-xs font-medium text-zinc-500">VARA</span>
+          </span>
+        </div>
+        {priv && (
+          <div className="mt-2.5 flex items-center gap-2 border-t hairline pt-2.5">
+            <span className="shrink-0 text-[11px] text-zinc-600">Invite</span>
+            <ShareLink
+              value={buildMatchLink(programId, match.id)}
+              label={`…/${match.id}`}
+              className="ml-auto"
+            />
+          </div>
+        )}
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
 
