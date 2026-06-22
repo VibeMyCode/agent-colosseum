@@ -12,4 +12,3 @@ categories.workspace = true
 
 [dependencies]
 sails-rs.workspace = true
-gstd = "1.2.0"
