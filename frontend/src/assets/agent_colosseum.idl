@@ -1,0 +1,113 @@
+/// Cosmetic-only avatar configuration. Each field is a variant index in 0..=2
+/// and has NO effect on battle outcomes or economics in v1.
+type BodyParts = struct {
+  head_type: u8,
+  body_type: u8,
+  arms_type: u8,
+  legs_type: u8,
+};
+
+/// Read-model for an agent returned by queries.
+type AgentView = struct {
+  agent_id: actor_id,
+  name: str,
+  operator: actor_id,
+  body_parts: BodyParts,
+  wins: u32,
+  losses: u32,
+  total_staked: u128,
+  total_earned: u128,
+};
+
+/// Read-model for a match returned by queries.
+type MatchView = struct {
+  id: u64,
+  agent_a: actor_id,
+  agent_b: opt actor_id,
+  agent_a_name: str,
+  agent_b_name: opt str,
+  stake: u128,
+  status: MatchStatus,
+  seed: u64,
+  winner: opt actor_id,
+};
+
+/// Lifecycle of a match: Waiting → Ready → Completed → Claimed.
+type MatchStatus = enum {
+  /// Created by agent A, awaiting a second participant.
+  Waiting,
+  /// Both agents joined; awaiting the owner-submitted battle result.
+  Ready,
+  /// Result recorded; winnings claimable by the winner.
+  Completed,
+  /// Winner has claimed the payout.
+  Claimed,
+};
+
+constructor {
+  /// Construct the program, recording `owner` as the privileged account that
+  /// may submit battle results and change admin settings.
+  New : (owner: actor_id);
+};
+
+service AgentColosseum {
+  /// Claim winnings for a Completed match. Only the recorded winner may claim.
+  /// 
+  /// v1: records the payout against the winner's lifetime earnings and returns
+  /// a status string. The actual VARA transfer is deferred to v2.
+  ClaimWinnings : (match_id: u64) -> str;
+  /// Create a match as agent A, staking `stake` (must be covered by attached
+  /// value). Returns the new match id.
+  CreateMatch : (stake: u128) -> u64;
+  /// Join a waiting match as agent B, matching the stake with attached value.
+  JoinMatch : (match_id: u64) -> null;
+  /// Register the caller as an agent. One agent per account; the agent id is
+  /// the caller's `ActorId`. `body_parts` are cosmetic-only.
+  RegisterAgent : (name: str, body_parts: BodyParts, strategy_hash: [u8, 32], strategy_url: str) -> actor_id;
+  /// Record the outcome of a Ready match. OWNER-only: the off-chain battle
+  /// engine is trusted to run the simulation and submit the verified result.
+  SetBattleResult : (match_id: u64, winner: actor_id, timeline_hash: [u8, 32]) -> null;
+  SetPaused : (paused: bool) -> null;
+  SetProtocolFee : (fee_bps: u16) -> null;
+  /// Update mutable fields of the caller's agent. Each argument is optional;
+  /// `None` leaves the corresponding field unchanged.
+  UpdateAgent : (name: opt str, body_parts: opt BodyParts, strategy_hash: opt [u8, 32], strategy_url: opt str) -> null;
+  query GetAgent : (agent_id: actor_id) -> opt AgentView;
+  /// Returns `(protocol_fee_bps, paused, next_match_id)`.
+  query GetConfig : () -> struct { u16, bool, u64 };
+  query GetMatch : (match_id: u64) -> opt MatchView;
+  /// All matches currently in the Ready state (both agents joined, awaiting
+  /// result).
+  query ListActiveMatches : () -> vec MatchView;
+  query ListAgents : (offset: u32, limit: u32) -> vec AgentView;
+  query ListMatches : (offset: u32, limit: u32) -> vec MatchView;
+
+  events {
+    /// A new match was opened by `agent_a`. `agent_b` is zero until someone
+    /// joins.
+    MatchCreated: struct {
+      match_id: u64,
+      agent_a: actor_id,
+      agent_b: actor_id,
+      stake: u128,
+    };
+    /// `agent_b` joined a waiting match, which is now Ready.
+    MatchJoined: struct {
+      match_id: u64,
+      agent_b: actor_id,
+    };
+    /// The owner recorded the verified battle outcome.
+    BattleResultSet: struct {
+      match_id: u64,
+      winner: actor_id,
+      timeline_hash: [u8, 32],
+    };
+    /// The winner claimed the pooled payout (stake*2 minus protocol fee).
+    ClaimedWinnings: struct {
+      match_id: u64,
+      winner: actor_id,
+      payout: u128,
+    };
+  }
+};
+

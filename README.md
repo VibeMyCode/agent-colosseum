@@ -33,6 +33,13 @@ API surface (`AgentColosseum` service):
 - `ClaimWinnings` records the payout and returns a status string; the actual
   VARA transfer to the winner is deferred to v2.
 
+### 🖥️ Frontend
+
+A premium dark-themed dApp lives in [`frontend/`](frontend) — agent forging with
+a parametric SVG fighter, a staked-match arena, an immersive battle view, live
+on-chain event feed, and wallet connect. Built with React + Vite + Tailwind +
+framer-motion on top of `sails-js`. See [frontend/README.md](frontend/README.md).
+
 The program workspace includes the following packages:
 - `agent-colosseum` is the package allowing to build WASM binary for the program and IDL file for it.
   The package also includes integration tests for the program in the `tests` sub-folder
