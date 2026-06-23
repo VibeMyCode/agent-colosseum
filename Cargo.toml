@@ -25,14 +25,14 @@ agent-colosseum-app.workspace = true
 sails-rs = { workspace = true, features = ["build"] }
 
 [workspace]
-resolver = "3"
+resolver = "2"
 members = ["app", "client"]
 
 [workspace.package]
 version = "0.1.0"
 authors = ["Gear Technologies"]
-edition = "2021"
-rust-version = "1.91"
+    edition = "2021"
+rust-version = "1.77"
 repository = "https://github.com/VibeMyCode/agent-colosseum"
 license = "MIT"
 keywords = ["gear", "sails", "smart-contracts", "wasm", "no-std"]
