@@ -34,11 +34,18 @@ type Burst = { side: Side; kind: "spark" | "explosion"; id: number };
 type Fx = {
   hpA: number;
   hpB: number;
+  // Remaining dodge/boost charges, tracked per turn so the HUD ticks down live.
+  dodgeA: number;
+  dodgeB: number;
+  boostA: number;
+  boostB: number;
   charging: Side | null;
   gait: LegsGait | null;
   projectile: { weapon: WeaponKind; from: Side; id: number } | null;
   impact: Side | null; // defender currently flinching from a hit
   dodge: Side | null; // defender currently side-stepping
+  boosted: Side | null; // attacker currently glowing with a power attack
+  flash: boolean; // brief golden screen flash on a power attack
   popup: Popup | null;
   burst: Burst | null;
   shake: number; // bumped to retrigger the screen shake
@@ -70,7 +77,7 @@ export function BattleScene({
   const statsA = useMemo(() => result.statsA ?? deriveStats(a.parts), [result, a.parts]);
   const statsB = useMemo(() => result.statsB ?? deriveStats(b.parts), [result, b.parts]);
 
-  const [fx, setFx] = useState<Fx>(() => initialFx(statsA.maxHp, statsB.maxHp));
+  const [fx, setFx] = useState<Fx>(() => initialFx(statsA, statsB));
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   const shakeControls = useAnimationControls();
@@ -78,7 +85,7 @@ export function BattleScene({
   useEffect(() => {
     let idCounter = 1;
     const nextId = () => idCounter++;
-    setFx(initialFx(statsA.maxHp, statsB.maxHp));
+    setFx(initialFx(statsA, statsB));
 
     const seq: Array<[number, () => void]> = [];
     const patch = (delay: number, p: Partial<Fx>) =>
@@ -94,6 +101,16 @@ export function BattleScene({
       const def = turn.defender;
       const gap = i === 0 ? 420 : 360;
 
+      // Remaining charges after this turn, mapped from attacker/defender → side.
+      const dodgeA =
+        atk === "a" ? turn.dodgeRemainingAtk : turn.dodgeRemainingDef;
+      const dodgeB =
+        atk === "a" ? turn.dodgeRemainingDef : turn.dodgeRemainingAtk;
+      const boostA =
+        atk === "a" ? turn.boostRemainingAtk : turn.boostRemainingDef;
+      const boostB =
+        atk === "a" ? turn.boostRemainingDef : turn.boostRemainingAtk;
+
       // 1) Ram charge.
       patch(gap, {
         charging: atk,
@@ -101,6 +118,8 @@ export function BattleScene({
         projectile: null,
         impact: null,
         dodge: null,
+        boosted: null,
+        flash: false,
         popup: null,
         burst: null,
         log: `${nameOf(atk)} ${ramVerb(turn.gait)}!`,
@@ -108,9 +127,16 @@ export function BattleScene({
       // Heavy treads shake the arena on the charge.
       if (turn.gait === "treads") patch(280, { shake: nextId() });
 
-      // 2) Fire weapon (attacker eases back as the shot leaves).
+      // 2) Fire weapon (attacker eases back as the shot leaves). Charge counts
+      // tick down here, and a power attack lights the attacker + flashes.
       patch(turn.gait === "treads" ? 60 : 320, {
         charging: null,
+        dodgeA,
+        dodgeB,
+        boostA,
+        boostB,
+        boosted: turn.powerAttack ? atk : null,
+        flash: turn.powerAttack,
         projectile: { weapon: turn.weapon, from: atk, id: nextId() },
         log: turn.powerAttack
           ? `${nameOf(atk)} ${WEAPON_VERB[turn.weapon]} — POWER ATTACK!`
@@ -121,6 +147,8 @@ export function BattleScene({
       if (turn.dodged) {
         patch(FLIGHT[turn.weapon], {
           projectile: null,
+          boosted: null,
+          flash: false,
           dodge: def,
           popup: { side: def, text: "DODGE!", kind: "dodge", id: nextId() },
           log: `${nameOf(def)} dodges!`,
@@ -129,12 +157,15 @@ export function BattleScene({
         const isExplosive = turn.weapon === "cannons";
         patch(FLIGHT[turn.weapon], {
           projectile: null,
+          boosted: null,
+          flash: false,
           impact: def,
           hpA: turn.hpA,
           hpB: turn.hpB,
           popup: { side: def, text: `-${turn.damage}`, kind: "dmg", id: nextId() },
           burst: { side: def, kind: isExplosive ? "explosion" : "spark", id: nextId() },
-          ...(isExplosive ? { shake: nextId() } : {}),
+          // Cannons and any power attack rock the arena.
+          ...(isExplosive || turn.powerAttack ? { shake: nextId() } : {}),
           log: `${nameOf(def)} takes ${turn.damage} damage!`,
         });
       }
@@ -195,6 +226,16 @@ export function BattleScene({
     >
       <div className="pointer-events-none absolute -top-1/2 left-1/2 h-[200%] w-[60%] -translate-x-1/2 aura opacity-15 blur-2xl" />
 
+      {/* Power-attack screen flash */}
+      {fx.flash && (
+        <motion.div
+          className="pointer-events-none absolute inset-0 z-50 bg-amber-400/10"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 0.3, 0] }}
+          transition={{ duration: 0.3 }}
+        />
+      )}
+
       {/* Fighters */}
       <Fighter
         side="a"
@@ -254,15 +295,21 @@ export function BattleScene({
   );
 }
 
-function initialFx(hpA: number, hpB: number): Fx {
+function initialFx(statsA: FighterStats, statsB: FighterStats): Fx {
   return {
-    hpA,
-    hpB,
+    hpA: statsA.maxHp,
+    hpB: statsB.maxHp,
+    dodgeA: statsA.dodgeCharges,
+    dodgeB: statsB.dodgeCharges,
+    boostA: statsA.boostCharges,
+    boostB: statsB.boostCharges,
     charging: null,
     gait: null,
     projectile: null,
     impact: null,
     dodge: null,
+    boosted: null,
+    flash: false,
     popup: null,
     burst: null,
     shake: 0,
@@ -301,6 +348,11 @@ function Fighter({
   const charging = fx.charging === side;
   const hit = fx.impact === side;
   const dodging = fx.dodge === side;
+  const boosting = fx.boosted === side;
+
+  // Live remaining charges for this side (tick down across the bout).
+  const dodgeLeft = side === "a" ? fx.dodgeA : fx.dodgeB;
+  const boostLeft = side === "a" ? fx.boostA : fx.boostB;
 
   // Horizontal motion: lunge toward the centre, recoil on hit, step back to dodge.
   let x = 0;
@@ -324,13 +376,13 @@ function Fighter({
             </span>
             <span
               className="inline-flex shrink-0 items-center gap-1.5 font-mono text-[10px] text-zinc-500"
-              title={`${stats.dodgeCharges} dodge · ${stats.boostCharges} boost · ${stats.hitDamage} hit dmg`}
+              title={`${dodgeLeft}/${stats.dodgeCharges} dodge · ${boostLeft}/${stats.boostCharges} boost · ${stats.hitDamage} hit dmg`}
             >
               <span className="inline-flex items-center gap-0.5 text-cyan-400">
-                <Shield size={10} weight="fill" /> {stats.dodgeCharges}
+                <Shield size={10} weight="fill" /> {dodgeLeft}
               </span>
               <span className="inline-flex items-center gap-0.5 text-ember-400">
-                <Lightning size={10} weight="fill" /> {stats.boostCharges}
+                <Lightning size={10} weight="fill" /> {boostLeft}
               </span>
             </span>
           </div>
@@ -360,6 +412,14 @@ function Fighter({
               : { type: "spring", stiffness: 600, damping: 24 }
           }
         >
+          {/* Power-attack glow */}
+          {boosting && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="pointer-events-none absolute inset-0 rounded-full bg-ember-400/30 blur-xl animate-pulse"
+            />
+          )}
           {won && (
             <motion.div
               initial={{ y: -8, opacity: 0, scale: 0.6 }}
@@ -370,7 +430,7 @@ function Fighter({
               <Crown size={24} weight="fill" className="text-ember-400 drop-shadow-[0_0_10px_rgba(245,158,11,0.8)]" />
             </motion.div>
           )}
-          <div style={mirror ? { transform: "scaleX(-1)" } : undefined}>
+          <div className="relative" style={mirror ? { transform: "scaleX(-1)" } : undefined}>
             <AgentAvatar parts={info.parts} size={132} animated={!isDead && !won} destroyed={isDead} />
           </div>
 

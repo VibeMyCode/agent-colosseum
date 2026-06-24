@@ -254,16 +254,18 @@ export function BotBattleModal({
               </div>
             </div>
 
-            {/* Strategy */}
-            <details className="rounded-xl border hairline bg-white/[0.02]">
-              <summary className="cursor-pointer px-4 py-3 font-mono text-xs text-zinc-400 hover:text-zinc-200">
-                Bot Strategy ⚙️
-              </summary>
-              <div className="border-t hairline p-4 space-y-3">
+            {/* Strategy — always visible */}
+            <div className="rounded-xl border hairline bg-white/[0.02]">
+              <div className="flex items-center gap-2 border-b hairline px-4 py-3">
+                <span className="font-mono text-xs font-semibold text-zinc-300">
+                  Bot Strategy ⚙️
+                </span>
+              </div>
+              <div className="p-4 space-y-3">
                 {/* Preset dropdown */}
                 <div>
                   <label className="mb-1 block font-mono text-[10px] text-zinc-500">
-                    Strategy
+                    Choose a preset, or load your own
                   </label>
                   <select
                     value={strategyMode}
@@ -365,7 +367,7 @@ export function BotBattleModal({
                   </div>
                 </div>
               </div>
-            </details>
+            </div>
 
             <div className="rounded-xl border hairline bg-white/[0.02] p-4 text-sm">
               {forFun ? (

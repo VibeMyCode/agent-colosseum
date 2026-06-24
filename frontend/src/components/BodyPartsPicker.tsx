@@ -3,7 +3,6 @@ import { Shuffle } from "@phosphor-icons/react";
 import {
   PART_DEFS,
   POINT_BUDGET,
-  budgetRemaining,
   totalCost,
   type BodyParts,
   type PartKey,
@@ -22,7 +21,6 @@ function partCost(key: PartKey, level: number): number {
 }
 
 export function BodyPartsPicker({ value, onChange }: Props) {
-  const remaining = budgetRemaining(value);
   const used = totalCost(value);
 
   function set(key: PartKey, variant: number) {
@@ -121,25 +119,31 @@ export function BodyPartsPicker({ value, onChange }: Props) {
               {def.variants.map((variant, i) => {
                 const active = value[def.key] === i;
                 const currentCost = partCost(def.key, value[def.key]);
-                // Selecting this would push us over budget *and* costs more
-                // than what's currently equipped for this part.
-                const delta = variant.cost - currentCost;
-                const exceeds = !active && delta > remaining && delta > 0;
+                // Selecting this would push the loadout over the point budget
+                // (and it costs more than what's currently equipped here).
+                const overBudget =
+                  !active &&
+                  variant.cost > currentCost &&
+                  used - currentCost + variant.cost > POINT_BUDGET;
                 return (
                   <button
                     key={variant.name}
                     type="button"
-                    onClick={() => set(def.key, i)}
+                    disabled={overBudget}
+                    onClick={() => {
+                      if (overBudget) return;
+                      set(def.key, i);
+                    }}
                     title={
-                      exceeds
+                      overBudget
                         ? `Cost: ${variant.cost} pts · budget exceeded`
                         : `Cost: ${variant.cost} pts`
                     }
                     className={`relative block w-full rounded-lg border px-2 py-1.5 text-center transition-all ${
                       active
                         ? "border-ember-500/50 bg-ember-500/10 text-ember-200"
-                        : exceeds
-                          ? "border-white/8 bg-white/[0.02] text-zinc-500 opacity-40 hover:opacity-70"
+                        : overBudget
+                          ? "border-white/8 bg-white/[0.02] text-zinc-500 opacity-50 cursor-not-allowed"
                           : "border-white/8 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
                     }`}
                   >

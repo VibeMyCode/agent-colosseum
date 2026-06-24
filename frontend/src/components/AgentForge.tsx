@@ -19,6 +19,7 @@ import {
   deriveStrategyHash,
   formatVara,
   hashToHex,
+  isBudgetValid,
   registerAgent,
   shortHex,
   totalCost,
@@ -78,7 +79,8 @@ export function AgentForge() {
     return null;
   }, [name]);
 
-  const canSubmit = ready && Boolean(account) && !nameError && !busy;
+  const canSubmit =
+    ready && Boolean(account) && !nameError && !busy && isBudgetValid(parts);
 
   async function submit() {
     if (!canSubmit) return;
@@ -247,9 +249,11 @@ export function AgentForge() {
                     ? "Working…"
                     : !account
                       ? "Connect wallet to forge"
-                      : isUpdate
-                        ? "Update Agent"
-                        : "Forge Agent"}
+                      : !isBudgetValid(parts)
+                        ? "Over budget"
+                        : isUpdate
+                          ? "Update Agent"
+                          : "Forge Agent"}
                 </button>
               </div>
             </div>
