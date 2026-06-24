@@ -1,31 +1,84 @@
 import { motion } from "framer-motion";
 import { Shuffle } from "@phosphor-icons/react";
-import { PART_DEFS, type BodyParts, type PartKey } from "@/lib/colosseum";
+import {
+  PART_DEFS,
+  POINT_BUDGET,
+  budgetRemaining,
+  totalCost,
+  type BodyParts,
+  type PartKey,
+} from "@/lib/colosseum";
 
 type Props = {
   value: BodyParts;
   onChange: (next: BodyParts) => void;
 };
 
+const PART_KEYS: PartKey[] = PART_DEFS.map((d) => d.key);
+
+function partCost(key: PartKey, level: number): number {
+  const def = PART_DEFS.find((d) => d.key === key)!;
+  return def.variants[level].cost;
+}
+
 export function BodyPartsPicker({ value, onChange }: Props) {
+  const remaining = budgetRemaining(value);
+
   function set(key: PartKey, variant: number) {
     onChange({ ...value, [key]: variant });
   }
 
   function randomize() {
-    onChange({
+    const parts: BodyParts = {
       head_type: Math.floor(Math.random() * 3),
       body_type: Math.floor(Math.random() * 3),
       arms_type: Math.floor(Math.random() * 3),
       legs_type: Math.floor(Math.random() * 3),
-    });
+    };
+
+    // Over budget → repeatedly downgrade the highest-cost part.
+    while (totalCost(parts) > POINT_BUDGET) {
+      let best: PartKey | null = null;
+      let bestCost = -1;
+      for (const key of PART_KEYS) {
+        if (parts[key] <= 0) continue;
+        const c = partCost(key, parts[key]);
+        if (c > bestCost) {
+          bestCost = c;
+          best = key;
+        }
+      }
+      if (best === null) break;
+      parts[best] -= 1;
+    }
+
+    // Under budget → upgrade random sub-max parts until the budget is met.
+    while (totalCost(parts) < POINT_BUDGET) {
+      const upgradable = PART_KEYS.filter((key) => parts[key] < 2);
+      if (upgradable.length === 0) break;
+      const key = upgradable[Math.floor(Math.random() * upgradable.length)];
+      parts[key] += 1;
+      if (totalCost(parts) > POINT_BUDGET) {
+        parts[key] -= 1;
+        break;
+      }
+    }
+
+    onChange(parts);
   }
+
+  const budgetColor =
+    remaining < 0
+      ? "text-red-400"
+      : remaining === 0
+        ? "text-emerald-400"
+        : "text-amber-300";
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <span className="font-display text-xs font-semibold uppercase tracking-widest text-zinc-500">
-          Chassis · cosmetic only
+          Chassis · each part sets a combat stat
         </span>
         <button
           type="button"
@@ -36,24 +89,56 @@ export function BodyPartsPicker({ value, onChange }: Props) {
         </button>
       </div>
 
+      {/* Budget readout — leading number is points remaining. */}
+      <div className="flex items-center justify-between rounded-lg border hairline bg-white/[0.02] px-3 py-2">
+        <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+          Budget
+        </span>
+        <span className={`font-display text-sm font-bold ${budgetColor}`}>
+          {remaining}/{POINT_BUDGET}
+          {remaining < 0 && (
+            <span className="ml-1.5 font-mono text-[10px] font-normal text-red-400">
+              · overspent
+            </span>
+          )}
+        </span>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {PART_DEFS.map((def) => (
           <div key={def.key} className="space-y-1.5">
-            <div className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
-              {def.label}
+            <div className="flex items-baseline justify-between">
+              <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+                {def.label}
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-700">
+                {def.attribute}
+              </span>
             </div>
             <div className="space-y-1.5">
               {def.variants.map((variant, i) => {
                 const active = value[def.key] === i;
+                const currentCost = partCost(def.key, value[def.key]);
+                // Selecting this would push us over budget *and* costs more
+                // than what's currently equipped for this part.
+                const delta = variant.cost - currentCost;
+                const exceeds = !active && delta > remaining && delta > 0;
                 return (
                   <button
-                    key={variant}
+                    key={variant.name}
                     type="button"
                     onClick={() => set(def.key, i)}
-                    className={`relative block w-full rounded-lg border px-2 py-2 text-center text-xs font-medium transition-all ${
+                    title={
+                      exceeds
+                        ? `Cost: ${variant.cost} pts · budget exceeded`
+                        : `Cost: ${variant.cost} pts`
+                    }
+                    className={`relative block w-full rounded-lg border px-2 py-1.5 text-center transition-all ${
                       active
                         ? "border-ember-500/50 bg-ember-500/10 text-ember-200"
-                        : "border-white/8 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
+                        : exceeds
+                          ? "border-white/8 bg-white/[0.02] text-zinc-500 opacity-40 hover:opacity-70"
+                          : "border-white/8 bg-white/[0.02] text-zinc-400 hover:border-white/20 hover:text-zinc-200"
                     }`}
                   >
                     {active && (
@@ -63,7 +148,25 @@ export function BodyPartsPicker({ value, onChange }: Props) {
                         transition={{ type: "spring", stiffness: 400, damping: 30 }}
                       />
                     )}
-                    <span className="relative">{variant}</span>
+                    <span className="relative block text-xs font-medium">
+                      {variant.name}
+                    </span>
+                    <span
+                      className={`relative flex items-center justify-center gap-1 text-[10px] font-mono ${
+                        active ? "text-ember-300/80" : "text-zinc-600"
+                      }`}
+                    >
+                      {variant.stat}
+                      <span
+                        className={`rounded px-1 ${
+                          active
+                            ? "bg-ember-500/20 text-ember-200"
+                            : "bg-white/5 text-zinc-500"
+                        }`}
+                      >
+                        •{variant.cost}
+                      </span>
+                    </span>
                   </button>
                 );
               })}

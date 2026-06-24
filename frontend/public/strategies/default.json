@@ -1,0 +1,15 @@
+{
+  "name": "default-brawler",
+  "version": 1,
+  "rules": {
+    "dodge": [
+      { "condition": { "opponent_boosted": true }, "priority": 1 },
+      { "condition": { "hp_below": 0.2 }, "priority": 2 },
+      { "condition": { "always": false }, "priority": 99 }
+    ],
+    "powerAttack": [
+      { "condition": { "round_below": 3 }, "priority": 1 },
+      { "condition": { "hp_above": 0.6 }, "priority": 2 }
+    ]
+  }
+}

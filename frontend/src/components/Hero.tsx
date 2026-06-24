@@ -1,6 +1,6 @@
-import { useMemo } from "react";
-import { motion } from "framer-motion";
-import { Sword, Users, Fire, Coins } from "@phosphor-icons/react";
+import { useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Sword, Users, Fire, Coins, CaretDown } from "@phosphor-icons/react";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { useColosseum } from "@/providers/colosseum-provider";
 import { formatVara, type BodyParts } from "@/lib/colosseum";
@@ -9,6 +9,7 @@ const SHOWCASE: BodyParts = { head_type: 2, body_type: 2, arms_type: 0, legs_typ
 
 export function Hero() {
   const { matches, agents, config } = useColosseum();
+  const [open, setOpen] = useState(true);
 
   const stats = useMemo(() => {
     const open = matches.filter((m) => m.status === "Waiting").length;
@@ -23,17 +24,37 @@ export function Hero() {
       <div className="absolute inset-0 bg-ember-radial" />
       <div className="pointer-events-none absolute -right-16 -top-20 h-72 w-72 rounded-full bg-plasma-500/10 blur-3xl" />
 
+      {/* Collapsible header */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="relative flex w-full items-center gap-2.5 px-6 py-4 text-left transition-colors hover:bg-white/[0.02] sm:px-10"
+      >
+        <Fire size={18} weight="fill" className="text-ember-400" />
+        <h2 className="display text-base font-bold text-zinc-100">
+          Agent Colosseum
+        </h2>
+        <span className="chip border border-ember-500/25 bg-ember-500/10 text-ember-300">
+          <span className="h-1.5 w-1.5 rounded-full bg-ember-400 animate-pulse" />
+          On-chain · Vara Network
+        </span>
+        <CaretDown
+          size={16}
+          weight="bold"
+          className={`ml-auto text-zinc-500 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 30 }}
+            className="relative overflow-hidden"
+          >
       <div className="relative grid items-center gap-6 px-6 py-10 sm:px-10 sm:py-12 md:grid-cols-[1fr_auto]">
         <div>
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="mb-4 inline-flex items-center gap-2 rounded-full border border-ember-500/25 bg-ember-500/10 px-3 py-1 text-xs font-medium text-ember-300"
-          >
-            <span className="h-1.5 w-1.5 rounded-full bg-ember-400 animate-pulse" />
-            On-chain · Vara Network
-          </motion.div>
-
           <motion.h1
             initial={{ opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
@@ -94,6 +115,9 @@ export function Hero() {
           </div>
         </motion.div>
       </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {config?.paused && (
         <div className="relative border-t border-amber-500/20 bg-amber-500/10 px-6 py-2.5 text-center text-xs font-medium text-amber-300">

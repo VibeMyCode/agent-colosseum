@@ -6,26 +6,66 @@ type Props = {
   parts: BodyParts;
   size?: number;
   animated?: boolean;
+  /** When true the chassis shatters: each part group flies outward and dims. */
+  destroyed?: boolean;
   className?: string;
 };
 
 const STEEL_LIGHT = "#525a6b";
 const STEEL_DARK = "#1c2029";
 
+// Scatter vector (in viewBox units) + spin for each part when destroyed.
+const SCATTER: Record<"head" | "body" | "arms" | "legs", { x: number; y: number; r: number }> = {
+  head: { x: -16, y: -30, r: -40 },
+  body: { x: 10, y: 22, r: 28 },
+  arms: { x: -32, y: 14, r: -55 },
+  legs: { x: 26, y: 30, r: 60 },
+};
+
 /**
- * A parametric mech-gladiator rendered entirely from the four cosmetic body
- * parts (each 0–2). Body parts have no gameplay effect (v1) — this is the
- * fighter's identity / avatar.
+ * A parametric mech-gladiator rendered entirely from the four body parts (each
+ * 0–2). The parts double as the fighter's identity *and* its combat loadout
+ * (see lib/battle): head→dodge, core→HP, arms→weapon, legs→speed & ram.
  */
 export function AgentAvatar({
   parts,
   size = 120,
   animated = false,
+  destroyed = false,
   className = "",
 }: Props) {
   const uid = useId().replace(/:/g, "");
   const pal = paletteFor(parts);
   const accent = pal.primary;
+
+  // Each part group is wrapped so it can fly apart on death. When intact the
+  // wrapper is the identity transform, so static avatars render unchanged.
+  const Part = ({
+    which,
+    children,
+  }: {
+    which: keyof typeof SCATTER;
+    children: React.ReactNode;
+  }) => {
+    const s = SCATTER[which];
+    return (
+      <motion.g
+        style={{ transformBox: "fill-box", transformOrigin: "center" }}
+        animate={
+          destroyed
+            ? { x: s.x, y: s.y, rotate: s.r, opacity: 0.55 }
+            : { x: 0, y: 0, rotate: 0, opacity: 1 }
+        }
+        transition={
+          destroyed
+            ? { type: "spring", stiffness: 140, damping: 11, mass: 0.7 }
+            : { duration: 0.2 }
+        }
+      >
+        {children}
+      </motion.g>
+    );
+  };
 
   const svg = (
     <svg
@@ -33,7 +73,11 @@ export function AgentAvatar({
       width={size}
       height={(size * 140) / 120}
       className={className}
-      style={{ filter: `drop-shadow(0 6px 14px ${pal.glow})` }}
+      style={{
+        filter: destroyed
+          ? `drop-shadow(0 6px 14px rgba(0,0,0,0.6))`
+          : `drop-shadow(0 6px 14px ${pal.glow})`,
+      }}
     >
       <defs>
         <linearGradient id={`steel-${uid}`} x1="0" y1="0" x2="0" y2="1">
@@ -51,14 +95,14 @@ export function AgentAvatar({
         </radialGradient>
       </defs>
 
-      {renderLegs(parts.legs_type, uid, accent)}
-      {renderArms(parts.arms_type, uid, accent)}
-      {renderBody(parts.body_type, uid, accent)}
-      {renderHead(parts.head_type, uid, accent)}
+      <Part which="legs">{renderLegs(parts.legs_type, uid, accent)}</Part>
+      <Part which="arms">{renderArms(parts.arms_type, uid, accent)}</Part>
+      <Part which="body">{renderBody(parts.body_type, uid, accent)}</Part>
+      <Part which="head">{renderHead(parts.head_type, uid, accent)}</Part>
     </svg>
   );
 
-  if (!animated) return svg;
+  if (!animated || destroyed) return svg;
   return (
     <motion.div
       animate={{ y: [0, -5, 0] }}

@@ -9,15 +9,19 @@ import {
 } from "@phosphor-icons/react";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { BodyPartsPicker } from "@/components/BodyPartsPicker";
+import { StatPreview } from "@/components/battle/StatPreview";
 import { useColosseum } from "@/providers/colosseum-provider";
 import { useWallet } from "@/providers/chain-provider";
 import { useTx } from "@/hooks/use-tx";
 import {
+  POINT_BUDGET,
+  budgetRemaining,
   deriveStrategyHash,
   formatVara,
   hashToHex,
   registerAgent,
   shortHex,
+  totalCost,
   updateAgent,
   type BodyParts,
 } from "@/lib/colosseum";
@@ -160,6 +164,9 @@ export function AgentForge() {
                   </motion.div>
                 </div>
 
+                {/* Combat loadout these parts resolve to. */}
+                <StatPreview parts={parts} />
+
                 {isUpdate && myAgent && (
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <Stat icon={<Trophy size={14} weight="fill" />} label="Wins" value={myAgent.wins} />
@@ -214,6 +221,21 @@ export function AgentForge() {
                 </div>
 
                 <BodyPartsPicker value={parts} onChange={setParts} />
+
+                <div className="flex items-center justify-between rounded-lg border hairline bg-white/[0.02] px-3 py-2 font-mono text-[11px]">
+                  <span className="uppercase tracking-wider text-zinc-500">
+                    Budget
+                  </span>
+                  <span
+                    className={
+                      budgetRemaining(parts) >= 0
+                        ? "text-emerald-400"
+                        : "text-red-400"
+                    }
+                  >
+                    {totalCost(parts)}/{POINT_BUDGET} points used
+                  </span>
+                </div>
 
                 <button onClick={submit} disabled={!canSubmit} className="btn-ember w-full sm:w-auto sm:self-end sm:!px-8">
                   {busy

@@ -1,15 +1,81 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion } from "framer-motion";
-import { Robot, Sword, Crown, Lightning, ArrowsClockwise, Coins } from "@phosphor-icons/react";
+import { Sword, Crown, Coins, ArrowsClockwise, Robot } from "@phosphor-icons/react";
 import { Modal } from "@/components/ui/Modal";
-import { AgentAvatar } from "@/components/AgentAvatar";
-import { makeBot, rollWinner, type Bot } from "@/lib/bot";
+import { BattleScene } from "@/components/battle/BattleScene";
+import { StatPreview } from "@/components/battle/StatPreview";
+import { makeBot, type Bot } from "@/lib/bot";
+import { simulate, type BattleResult, type Side } from "@/lib/battle";
+import {
+  DEFAULT_STRATEGY,
+  validateStrategy,
+  type Strategy,
+} from "@/lib/strategy";
 import { formatVara, varaToUnits, type BodyParts } from "@/lib/colosseum";
 
 type Phase = "setup" | "fighting" | "result";
-type Winner = "you" | "bot";
 
 const PRESETS = ["0", "10", "25", "100"];
+
+const STRATEGY_PRESETS: { name: string; strategy: Strategy }[] = [
+  { name: "Balanced", strategy: { ...DEFAULT_STRATEGY } },
+  {
+    name: "Aggressive",
+    strategy: {
+      name: "aggressive",
+      version: 1,
+      rules: {
+        dodge: [{ condition: { opponent_boosted: true }, priority: 1 }],
+        powerAttack: [{ condition: { always: true }, priority: 1 }],
+      },
+    },
+  },
+  {
+    name: "Tank",
+    strategy: {
+      name: "tank",
+      version: 1,
+      rules: {
+        dodge: [
+          { condition: { hp_below: 0.4 }, priority: 1 },
+          { condition: { opponent_boosted: true }, priority: 2 },
+        ],
+        powerAttack: [{ condition: { always: false }, priority: 99 }],
+      },
+    },
+  },
+  {
+    name: "Counter",
+    strategy: {
+      name: "counter",
+      version: 1,
+      rules: {
+        dodge: [
+          { condition: { opponent_boosted: true }, priority: 1 },
+          { condition: { always: false }, priority: 99 },
+        ],
+        powerAttack: [
+          { condition: { opponent_boosted: true }, priority: 1 },
+          { condition: { hp_above: 0.5 }, priority: 2 },
+        ],
+      },
+    },
+  },
+];
+
+function randomBotStrategy(): Strategy {
+  return STRATEGY_PRESETS[Math.floor(Math.random() * STRATEGY_PRESETS.length)]
+    .strategy;
+}
+
+async function fetchStrategy(url: string): Promise<Strategy | null> {
+  try {
+    const res = await fetch(url);
+    const json = await res.json();
+    return validateStrategy(json) ? json : null;
+  } catch {
+    return null;
+  }
+}
 
 export function BotBattleModal({
   open,
@@ -28,16 +94,52 @@ export function BotBattleModal({
 }) {
   const [phase, setPhase] = useState<Phase>("setup");
   const [bot, setBot] = useState<Bot>(() => makeBot());
-  const [winner, setWinner] = useState<Winner>("you");
   const [amount, setAmount] = useState("25");
+  const [runKey, setRunKey] = useState(0);
+  const [result, setResult] = useState<BattleResult | null>(null);
+  const [winner, setWinner] = useState<Side | null>(null);
+
+  // Strategies — the player controls A; the bot gets a random preset.
+  const [strategyA, setStrategyA] = useState<Strategy>(DEFAULT_STRATEGY);
+  const [strategyB, setStrategyB] = useState<Strategy>(() => randomBotStrategy());
+  const [strategyUrl, setStrategyUrl] = useState("");
+  const [strategyError, setStrategyError] = useState<string | null>(null);
 
   // Reset the encounter whenever the modal is (re)opened.
   useEffect(() => {
     if (!open) return;
     setPhase("setup");
     setBot(makeBot());
+    setStrategyB(randomBotStrategy());
+    setResult(null);
+    setWinner(null);
     setAmount(initialStake > 0n ? formatVara(initialStake) : "25");
   }, [open, initialStake]);
+
+  // Load a strategy from the URL when one is entered. An empty URL leaves the
+  // currently-selected strategy (a preset, or the default) untouched so the
+  // preset buttons stay authoritative.
+  useEffect(() => {
+    const url = strategyUrl.trim();
+    if (!url) {
+      setStrategyError(null);
+      return;
+    }
+    let cancelled = false;
+    fetchStrategy(url).then((s) => {
+      if (cancelled) return;
+      if (s) {
+        setStrategyA(s);
+        setStrategyError(null);
+      } else {
+        setStrategyA(DEFAULT_STRATEGY);
+        setStrategyError("Could not load strategy from URL, using default");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [strategyUrl]);
 
   const units = useMemo(() => {
     try {
@@ -52,24 +154,26 @@ export function BotBattleModal({
   const payout = pool - (pool * BigInt(feeBps)) / 10_000n;
 
   function fight() {
-    setWinner(rollWinner());
+    // Fresh seed each bout so rematches differ; the simulation — strategy and
+    // stats, not a coin flip — decides the winner.
+    const seed = (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1;
+    const res = simulate(playerParts, bot.bodyParts, strategyA, strategyB, seed);
+    setResult(res);
+    setWinner(null);
+    setRunKey((k) => k + 1);
     setPhase("fighting");
   }
 
-  // Drive the fight → result transition.
-  useEffect(() => {
-    if (phase !== "fighting") return;
-    const t = setTimeout(() => setPhase("result"), 2200);
-    return () => clearTimeout(t);
-  }, [phase]);
-
   function rematch() {
     setBot(makeBot());
+    setStrategyB(randomBotStrategy());
+    setResult(null);
+    setWinner(null);
     setPhase("setup");
   }
 
-  const youWon = phase === "result" && winner === "you";
-  const botWon = phase === "result" && winner === "bot";
+  const youWon = winner === "a";
+  const perf = result?.performance.a ?? null;
 
   return (
     <Modal
@@ -80,48 +184,25 @@ export function BotBattleModal({
       subtitle="An offline sparring match — nothing is sent on-chain."
     >
       <div className="space-y-6">
-        {/* Arena */}
-        <div className="relative overflow-hidden rounded-2xl border hairline bg-grid-arena [background-size:22px_22px] px-4 py-8">
-          <div className="pointer-events-none absolute -top-1/2 left-1/2 h-[200%] w-[60%] -translate-x-1/2 aura opacity-20 blur-2xl animate-spin-slow" />
-          <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-            <SimFighter
-              name={playerName}
-              parts={playerParts}
-              side="left"
-              won={youWon}
-              dim={botWon}
-              fighting={phase === "fighting"}
-            />
-
-            <div className="flex flex-col items-center gap-1">
-              <motion.div
-                key={phase}
-                initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ type: "spring", stiffness: 260, damping: 16 }}
-                className="display text-2xl font-bold italic text-gradient-ember"
-              >
-                VS
-              </motion.div>
-              {phase === "fighting" && (
-                <Lightning size={16} weight="fill" className="text-plasma-400 animate-pulse" />
-              )}
-            </div>
-
-            <SimFighter
-              name={bot.name}
-              parts={bot.bodyParts}
-              side="right"
-              won={botWon}
-              dim={youWon}
-              fighting={phase === "fighting"}
-              isBot
-              mirror
-            />
+        {/* Arena / battle */}
+        {phase === "setup" ? (
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 rounded-2xl border hairline bg-grid-arena [background-size:22px_22px] px-4 py-5">
+            <Loadout name={playerName} parts={playerParts} tag="You" />
+            <div className="display text-2xl font-bold italic text-gradient-ember">VS</div>
+            <Loadout name={bot.name} parts={bot.bodyParts} tag="Bot" isBot />
           </div>
-        </div>
-
-        <Timeline phase={phase} />
+        ) : result ? (
+          <BattleScene
+            a={{ name: playerName, parts: playerParts }}
+            b={{ name: bot.name, parts: bot.bodyParts }}
+            result={result}
+            runKey={runKey}
+            onDone={(w) => {
+              setWinner(w);
+              setPhase("result");
+            }}
+          />
+        ) : null}
 
         {/* Phase content */}
         {phase === "setup" && (
@@ -159,11 +240,87 @@ export function BotBattleModal({
               </div>
             </div>
 
+            {/* Strategy */}
+            <details className="rounded-xl border hairline bg-white/[0.02]">
+              <summary className="cursor-pointer px-4 py-3 font-mono text-xs text-zinc-400 hover:text-zinc-200">
+                Bot Strategy ⚙️
+              </summary>
+              <div className="border-t hairline p-4 space-y-3">
+                <div>
+                  <label className="mb-1 block font-mono text-[10px] text-zinc-500">
+                    Strategy URL (optional)
+                  </label>
+                  <input
+                    value={strategyUrl}
+                    onChange={(e) => setStrategyUrl(e.target.value)}
+                    placeholder="https://github.com/.../strategy.json"
+                    className="field !text-xs !py-2"
+                  />
+                  <p className="mt-1 font-mono text-[10px] text-zinc-600">
+                    Default: balanced brawler (dodge power attacks, boost early)
+                  </p>
+                  {strategyError && (
+                    <p className="mt-1 font-mono text-[10px] text-red-400">
+                      {strategyError}
+                    </p>
+                  )}
+                </div>
+
+                {/* Strategy preview */}
+                <div className="rounded-lg border hairline bg-black/20 p-3">
+                  <div className="font-mono text-[10px] text-zinc-400">
+                    {strategyA.name} v{strategyA.version}
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-[10px]">
+                    <div>
+                      <span className="text-cyan-400">Dodge:</span>
+                      {strategyA.rules.dodge.filter(
+                        (r) =>
+                          !("always" in r.condition && r.condition.always === false)
+                      ).length > 0
+                        ? " active"
+                        : " none"}
+                    </div>
+                    <div>
+                      <span className="text-ember-400">Boost:</span>{" "}
+                      {strategyA.rules.powerAttack.length} rule(s)
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick presets */}
+                <div className="flex flex-wrap gap-1.5">
+                  {STRATEGY_PRESETS.map((p) => {
+                    const active = strategyA.name === p.strategy.name && !strategyUrl;
+                    return (
+                      <button
+                        key={p.name}
+                        type="button"
+                        onClick={() => {
+                          setStrategyUrl("");
+                          setStrategyError(null);
+                          setStrategyA(p.strategy);
+                        }}
+                        className={`rounded-lg border px-2.5 py-1 text-[10px] font-medium transition-colors ${
+                          active
+                            ? "border-ember-500/50 bg-ember-500/10 text-ember-200"
+                            : "border-white/8 text-zinc-400 hover:border-white/20 hover:text-zinc-200"
+                        }`}
+                      >
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </details>
+
             <div className="rounded-xl border hairline bg-white/[0.02] p-4 text-sm">
               {forFun ? (
                 <p className="text-center text-zinc-400">
                   No stake, no fee, no rewards — a friendly spar against{" "}
-                  <span className="text-ember-200">{bot.name}</span>.
+                  <span className="text-ember-200">{bot.name}</span>. Winner is
+                  decided by your chassis stats and strategy.
                 </p>
               ) : (
                 <div className="flex items-center justify-between">
@@ -182,8 +339,8 @@ export function BotBattleModal({
         )}
 
         {phase === "fighting" && (
-          <p className="py-2 text-center font-display text-sm text-zinc-400">
-            Blades clash… computing the outcome.
+          <p className="py-1 text-center font-display text-sm text-zinc-400">
+            The fight is on — stats and strategy decide the victor.
           </p>
         )}
 
@@ -209,6 +366,53 @@ export function BotBattleModal({
               </p>
             )}
 
+            {/* Strategy report */}
+            {perf && (
+              <div className="rounded-xl border hairline bg-white/[0.03] p-4 space-y-3">
+                <h3 className="font-display text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                  Strategy Report
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-lg border hairline bg-black/20 p-2.5">
+                    <div className="font-mono text-[10px] text-cyan-400">🛡️ Dodge</div>
+                    <div className="font-display text-lg font-bold text-zinc-100">
+                      {perf.dodgeChargesUsed}/
+                      {perf.dodgeChargesUsed + perf.dodgeChargesRemaining}
+                    </div>
+                    <div className="font-mono text-[9px] text-zinc-500">
+                      charges used
+                    </div>
+                  </div>
+                  <div className="rounded-lg border hairline bg-black/20 p-2.5">
+                    <div className="font-mono text-[10px] text-ember-400">
+                      ⚡ Speed Boost
+                    </div>
+                    <div className="font-display text-lg font-bold text-zinc-100">
+                      {perf.boostChargesUsed}/
+                      {perf.boostChargesUsed + perf.boostChargesRemaining}
+                    </div>
+                    <div className="font-mono text-[9px] text-zinc-500">
+                      charges used
+                    </div>
+                  </div>
+                </div>
+
+                {perf.suggestions.length > 0 && (
+                  <div className="space-y-1">
+                    {perf.suggestions.map((s, i) => (
+                      <p
+                        key={i}
+                        className="font-mono text-[10px] text-zinc-400 flex items-start gap-1.5"
+                      >
+                        <span className="text-zinc-600 mt-0.5">💡</span>
+                        {s}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex gap-2.5">
               <button onClick={rematch} className="btn-ghost flex-1">
                 <ArrowsClockwise size={16} weight="bold" /> Rematch
@@ -224,95 +428,25 @@ export function BotBattleModal({
   );
 }
 
-function SimFighter({
+function Loadout({
   name,
   parts,
-  side,
-  won,
-  dim,
-  fighting,
+  tag,
   isBot,
-  mirror,
 }: {
   name: string;
   parts: BodyParts;
-  side: "left" | "right";
-  won: boolean;
-  dim: boolean;
-  fighting: boolean;
+  tag: string;
   isBot?: boolean;
-  mirror?: boolean;
 }) {
   return (
     <div className="flex flex-col items-center gap-2">
-      <motion.div
-        className="relative"
-        animate={
-          fighting
-            ? { x: side === "left" ? [0, 10, 0] : [0, -10, 0] }
-            : { x: 0 }
-        }
-        transition={fighting ? { duration: 0.5, repeat: Infinity } : { duration: 0.3 }}
-        style={{ opacity: dim ? 0.4 : 1 }}
-      >
-        {won && (
-          <motion.div
-            initial={{ y: -6, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            className="absolute -top-5 left-1/2 -translate-x-1/2"
-          >
-            <Crown size={22} weight="fill" className="text-ember-400 drop-shadow-[0_0_8px_rgba(245,158,11,0.7)]" />
-          </motion.div>
-        )}
-        <div style={mirror ? { transform: "scaleX(-1)" } : undefined}>
-          <AgentAvatar parts={parts} size={90} animated={!dim} />
-        </div>
-      </motion.div>
-      <span className={`font-display text-sm font-bold ${won ? "text-ember-200" : "text-zinc-200"}`}>
-        {name}
-      </span>
+      <span className="font-display text-sm font-bold text-zinc-100">{name}</span>
       <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600">
-        {isBot ? (
-          <>
-            <Robot size={12} weight="fill" /> Bot
-          </>
-        ) : (
-          "You"
-        )}
+        {isBot ? <Robot size={12} weight="fill" /> : null}
+        {tag}
       </span>
-    </div>
-  );
-}
-
-function Timeline({ phase }: { phase: Phase }) {
-  const steps = ["Matched", "Battle", "Result"];
-  const current = phase === "setup" ? 0 : phase === "fighting" ? 1 : 2;
-  return (
-    <div className="flex items-center">
-      {steps.map((step, i) => {
-        const done = i <= current;
-        return (
-          <div key={step} className="flex flex-1 items-center last:flex-none">
-            <div className="flex flex-col items-center gap-1.5">
-              <div
-                className={`h-3 w-3 rounded-full border-2 transition-colors ${
-                  done ? "border-ember-400 bg-ember-400" : "border-white/15"
-                }`}
-              />
-              <span
-                className={`font-mono text-[10px] uppercase tracking-wider ${
-                  done ? "text-ember-300" : "text-zinc-600"
-                }`}
-              >
-                {step}
-              </span>
-            </div>
-            {i < steps.length - 1 && (
-              <div className={`mx-1 h-0.5 flex-1 ${i < current ? "bg-ember-500/50" : "bg-white/10"}`} />
-            )}
-          </div>
-        );
-      })}
+      <StatPreview parts={parts} className="w-full max-w-[190px]" />
     </div>
   );
 }

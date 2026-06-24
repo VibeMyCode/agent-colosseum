@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   Crown,
@@ -8,10 +8,19 @@ import {
   Lightning,
   Gavel,
   Robot,
+  Play,
+  ArrowsClockwise,
 } from "@phosphor-icons/react";
 import { Modal } from "@/components/ui/Modal";
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { BattleScene } from "@/components/battle/BattleScene";
 import { CopyAddress } from "@/components/CopyAddress";
+import {
+  seedFrom,
+  simulate,
+  simulateForcedWinner,
+  type BattleResult,
+} from "@/lib/battle";
 import { useColosseum } from "@/providers/colosseum-provider";
 import { useWallet } from "@/providers/chain-provider";
 import { useTx } from "@/hooks/use-tx";
@@ -55,11 +64,33 @@ export function BattleModal({
   const { account } = useWallet();
   const { run, busy } = useTx();
   const [winnerPick, setWinnerPick] = useState<"a" | "b">("a");
+  const [watching, setWatching] = useState(false);
+  const [runKey, setRunKey] = useState(0);
 
   const match = useMemo(
     () => matches.find((m) => m.id === matchId) ?? null,
     [matches, matchId]
   );
+
+  // Pre-compute the animated bout. When the on-chain result is in, force the
+  // recorded winner so the replay can never contradict the chain; otherwise
+  // play a stat-driven preview seeded by the match seed.
+  const battle = useMemo<BattleResult | null>(() => {
+    if (!match || !match.agentB) return null;
+    const aP = partsFor(agents, match.agentA);
+    const bP = partsFor(agents, match.agentB);
+    const seed = seedFrom(`${match.id}:${match.seed}`);
+    if (match.winner) {
+      const forced = sameActor(match.winner, match.agentA) ? "a" : "b";
+      return simulateForcedWinner(aP, bP, seed, forced);
+    }
+    return simulate(aP, bP, undefined, undefined, seed);
+  }, [match, agents]);
+
+  // Collapse the replay whenever a different match is opened.
+  useEffect(() => {
+    setWatching(false);
+  }, [matchId]);
 
   if (!match) {
     return <Modal open={open} onClose={onClose} title="Battle" children={null} />;
@@ -121,7 +152,31 @@ export function BattleModal({
       subtitle={`Pool of ${formatVara(pool)} VARA · winner takes ${formatVara(payout)}`}
     >
       <div className="space-y-6">
-        {/* Arena */}
+        {/* Arena — static line-up, or the animated replay when watching */}
+        {watching && battle ? (
+          <div className="space-y-2">
+            <BattleScene
+              a={{ name: match.agentAName || "Agent A", parts: aParts }}
+              b={{ name: match.agentBName || "Agent B", parts: bParts }}
+              result={battle}
+              runKey={runKey}
+            />
+            <div className="flex justify-center gap-2">
+              <button
+                onClick={() => setRunKey((k) => k + 1)}
+                className="btn-ghost !px-3 !py-1.5 text-xs"
+              >
+                <ArrowsClockwise size={14} weight="bold" /> Replay
+              </button>
+              <button
+                onClick={() => setWatching(false)}
+                className="btn-ghost !px-3 !py-1.5 text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        ) : (
         <div className="relative overflow-hidden rounded-2xl border hairline bg-grid-arena [background-size:22px_22px] px-4 py-8">
           <div className="pointer-events-none absolute -top-1/2 left-1/2 h-[200%] w-[60%] -translate-x-1/2 aura opacity-20 blur-2xl animate-spin-slow" />
           <div className="relative grid grid-cols-[1fr_auto_1fr] items-center gap-2">
@@ -168,7 +223,23 @@ export function BattleModal({
               </div>
             )}
           </div>
+
+          {battle && (
+            <div className="mt-5 flex justify-center">
+              <button
+                onClick={() => {
+                  setRunKey((k) => k + 1);
+                  setWatching(true);
+                }}
+                className="btn-ghost !px-4 !py-1.5 text-xs"
+              >
+                <Play size={14} weight="fill" className="text-ember-300" />
+                {decided ? "Watch battle replay" : "Preview the fight"}
+              </button>
+            </div>
+          )}
         </div>
+        )}
 
         {/* Timeline */}
         <Timeline status={match.status} />

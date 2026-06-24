@@ -68,7 +68,7 @@ export function App() {
             </a>
           </span>
           <span className="font-mono">
-            Body parts are cosmetic-only · Winnings settle on-chain
+            Parts drive combat stats · Winnings settle on-chain
           </span>
         </div>
       </footer>
