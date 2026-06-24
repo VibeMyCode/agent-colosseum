@@ -191,7 +191,7 @@ export function BattleScene({
   return (
     <motion.div
       animate={shakeControls}
-      className="relative h-[268px] w-full overflow-hidden rounded-2xl border hairline bg-grid-arena [background-size:22px_22px]"
+      className="relative h-[360px] w-full overflow-hidden rounded-2xl border hairline bg-grid-arena [background-size:22px_22px]"
     >
       <div className="pointer-events-none absolute -top-1/2 left-1/2 h-[200%] w-[60%] -translate-x-1/2 aura opacity-15 blur-2xl" />
 
@@ -324,7 +324,7 @@ function Fighter({
             </span>
             <span
               className="inline-flex shrink-0 items-center gap-1.5 font-mono text-[10px] text-zinc-500"
-              title={`${stats.dodgeCharges} dodge · ${stats.boostCharges} boost ×${stats.boostMultiplier.toFixed(1)} · ${stats.hitDamage} hit dmg`}
+              title={`${stats.dodgeCharges} dodge · ${stats.boostCharges} boost · ${stats.hitDamage} hit dmg`}
             >
               <span className="inline-flex items-center gap-0.5 text-cyan-400">
                 <Shield size={10} weight="fill" /> {stats.dodgeCharges}
@@ -371,7 +371,7 @@ function Fighter({
             </motion.div>
           )}
           <div style={mirror ? { transform: "scaleX(-1)" } : undefined}>
-            <AgentAvatar parts={info.parts} size={96} animated={!isDead && !won} destroyed={isDead} />
+            <AgentAvatar parts={info.parts} size={132} animated={!isDead && !won} destroyed={isDead} />
           </div>
 
           {/* Wreckage fire */}

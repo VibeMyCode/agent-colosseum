@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Trophy,
@@ -46,16 +46,21 @@ export function AgentForge() {
   const [parts, setParts] = useState<BodyParts>(DEFAULT_PARTS);
   const [strategyHash, setStrategyHash] = useState<number[]>([]);
 
+  const prevAgentId = useRef<string | null>(null);
+
   useEffect(() => {
-    if (myAgent) {
-      setName(myAgent.name);
-      setParts(myAgent.bodyParts);
-    } else {
-      setName("");
-      setStrategyUrl("");
-      setParts(DEFAULT_PARTS);
+    const id = myAgent?.agentId ?? null;
+    if (id !== prevAgentId.current) {
+      prevAgentId.current = id;
+      if (myAgent) {
+        setName(myAgent.name);
+        setParts(myAgent.bodyParts);
+      } else {
+        setName("");
+        setParts(DEFAULT_PARTS);
+      }
     }
-  }, [myAgent, account?.address]);
+  }, [myAgent]);
 
   useEffect(() => {
     let cancelled = false;

@@ -24,7 +24,7 @@ import {
 export const HEAD_DODGE_CHARGES = [1, 2, 3] as const;
 
 /** Body → max HP. */
-export const BODY_HP = [80, 120, 100] as const;
+export const BODY_HP = [80, 100, 120] as const;
 
 /** Legs → turn interval (ms between this fighter's attacks). Lower = faster. */
 export const LEGS_INTERVAL = [1500, 2500, 2000] as const;
@@ -39,10 +39,10 @@ export const LEGS_BOOST_CHARGES = [1, 2, 3] as const;
 export const LEGS_BOOST_MULT = [1.2, 1.3, 1.5] as const;
 
 /** Arms → base weapon damage. */
-export const ARMS_DAMAGE = [10, 20, 15] as const;
+export const ARMS_DAMAGE = [10, 15, 20] as const;
 
 export type WeaponKind = "blades" | "cannons" | "grapnels";
-export const ARMS_WEAPON: readonly WeaponKind[] = ["blades", "cannons", "grapnels"];
+export const ARMS_WEAPON: readonly WeaponKind[] = ["blades", "grapnels", "cannons"];
 
 export type LegsGait = "sprint" | "treads" | "hover";
 export const LEGS_GAIT: readonly LegsGait[] = ["sprint", "treads", "hover"];

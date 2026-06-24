@@ -59,10 +59,10 @@ function Chip({
     <div className="flex items-center gap-1.5 rounded-lg border hairline bg-white/[0.02] px-2 py-1.5">
       {icon}
       <div className="min-w-0 leading-tight">
-        <div className="truncate text-[9px] uppercase tracking-wider text-zinc-600">
+        <div className="truncate text-[10px] uppercase tracking-wider text-zinc-600">
           {label}
         </div>
-        <div className="font-display text-[11px] font-bold text-zinc-200">{value}</div>
+        <div className="font-display text-xs font-bold text-zinc-200">{value}</div>
       </div>
     </div>
   );

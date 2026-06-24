@@ -118,10 +118,7 @@ export function BodyPartsPicker({ value, onChange }: Props) {
               </span>
             </div>
             <div className="space-y-1.5">
-              {def.variants
-                .map((variant, i) => ({ variant, i }))
-                .sort((a, b) => a.variant.statValue - b.variant.statValue)
-                .map(({ variant, i }) => {
+              {def.variants.map((variant, i) => {
                 const active = value[def.key] === i;
                 const currentCost = partCost(def.key, value[def.key]);
                 // Selecting this would push us over budget *and* costs more

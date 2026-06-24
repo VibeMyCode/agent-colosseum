@@ -112,6 +112,10 @@ export function BotBattleModal({
   const [strategyB, setStrategyB] = useState<Strategy>(() => randomBotStrategy());
   const [strategyUrl, setStrategyUrl] = useState("");
   const [strategyError, setStrategyError] = useState<string | null>(null);
+  // Dropdown selection: a preset name, "url", or "json".
+  const [strategyMode, setStrategyMode] = useState("Balanced");
+  const [strategyJson, setStrategyJson] = useState("");
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
   // Reset the encounter whenever the modal is (re)opened.
   useEffect(() => {
@@ -256,25 +260,88 @@ export function BotBattleModal({
                 Bot Strategy ⚙️
               </summary>
               <div className="border-t hairline p-4 space-y-3">
+                {/* Preset dropdown */}
                 <div>
                   <label className="mb-1 block font-mono text-[10px] text-zinc-500">
-                    Strategy URL (optional)
+                    Strategy
                   </label>
-                  <input
-                    value={strategyUrl}
-                    onChange={(e) => setStrategyUrl(e.target.value)}
-                    placeholder="https://github.com/.../strategy.json"
+                  <select
+                    value={strategyMode}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setStrategyMode(v);
+                      setStrategyError(null);
+                      setJsonError(null);
+                      const preset = STRATEGY_PRESETS.find((p) => p.name === v);
+                      if (preset) {
+                        setStrategyUrl("");
+                        setStrategyJson("");
+                        setStrategyA(preset.strategy);
+                      }
+                    }}
                     className="field !text-xs !py-2"
-                  />
-                  <p className="mt-1 font-mono text-[10px] text-zinc-600">
-                    Default: balanced brawler (dodge power attacks, boost early)
-                  </p>
-                  {strategyError && (
-                    <p className="mt-1 font-mono text-[10px] text-red-400">
-                      {strategyError}
-                    </p>
-                  )}
+                  >
+                    <option value="Balanced">Default Brawler</option>
+                    <option value="Aggressive">Aggressive</option>
+                    <option value="Tank">Tank</option>
+                    <option value="Counter">Counter</option>
+                    <option value="url">Custom URL…</option>
+                    <option value="json">Paste JSON…</option>
+                  </select>
                 </div>
+
+                {/* Custom URL — only when selected */}
+                {strategyMode === "url" && (
+                  <div>
+                    <input
+                      value={strategyUrl}
+                      onChange={(e) => setStrategyUrl(e.target.value)}
+                      placeholder="https://github.com/.../strategy.json"
+                      className="field !text-xs !py-2"
+                    />
+                    {strategyError && (
+                      <p className="mt-1 font-mono text-[10px] text-red-400">
+                        {strategyError}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {/* Paste JSON — only when selected */}
+                {strategyMode === "json" && (
+                  <div>
+                    <textarea
+                      value={strategyJson}
+                      onChange={(e) => {
+                        const text = e.target.value;
+                        setStrategyJson(text);
+                        if (!text.trim()) {
+                          setJsonError(null);
+                          return;
+                        }
+                        try {
+                          const parsed = JSON.parse(text);
+                          if (validateStrategy(parsed)) {
+                            setStrategyA(parsed);
+                            setJsonError(null);
+                          } else {
+                            setJsonError("Invalid strategy JSON");
+                          }
+                        } catch {
+                          setJsonError("Invalid strategy JSON");
+                        }
+                      }}
+                      rows={4}
+                      placeholder='{"name":"my-strat","version":1,"rules":{"dodge":[],"powerAttack":[]}}'
+                      className="field !text-xs !py-2 font-mono"
+                    />
+                    {jsonError && (
+                      <p className="mt-1 font-mono text-[10px] text-red-400">
+                        {jsonError}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Strategy preview */}
                 <div className="rounded-lg border hairline bg-black/20 p-3">
@@ -296,31 +363,6 @@ export function BotBattleModal({
                       {strategyA.rules.powerAttack.length} rule(s)
                     </div>
                   </div>
-                </div>
-
-                {/* Quick presets */}
-                <div className="flex flex-wrap gap-1.5">
-                  {STRATEGY_PRESETS.map((p) => {
-                    const active = strategyA.name === p.strategy.name && !strategyUrl;
-                    return (
-                      <button
-                        key={p.name}
-                        type="button"
-                        onClick={() => {
-                          setStrategyUrl("");
-                          setStrategyError(null);
-                          setStrategyA(p.strategy);
-                        }}
-                        className={`rounded-lg border px-2.5 py-1 text-[10px] font-medium transition-colors ${
-                          active
-                            ? "border-ember-500/50 bg-ember-500/10 text-ember-200"
-                            : "border-white/8 text-zinc-400 hover:border-white/20 hover:text-zinc-200"
-                        }`}
-                      >
-                        {p.name}
-                      </button>
-                    );
-                  })}
                 </div>
               </div>
             </details>
@@ -473,7 +515,7 @@ function Loadout({
         {isBot ? <Robot size={12} weight="fill" /> : null}
         {tag}
       </span>
-      <StatPreview parts={parts} className="w-full max-w-[190px]" />
+      <StatPreview parts={parts} className="w-full max-w-[240px]" />
     </div>
   );
 }
