@@ -274,6 +274,8 @@ export type PartVariant = {
   stat: string;
   /** Point cost (0 = weak, 1 = medium, 2 = strong). */
   cost: number;
+  /** Magnitude of the governed stat — used to order variants in the picker. */
+  statValue: number;
 };
 
 export const PART_DEFS: {
@@ -288,9 +290,9 @@ export const PART_DEFS: {
     label: "Head",
     attribute: "Dodge",
     variants: [
-      { name: "Visor", stat: "1 Dodge", cost: 0 },
-      { name: "Optic", stat: "2 Dodge", cost: 1 },
-      { name: "Crest", stat: "3 Dodge", cost: 2 },
+      { name: "Visor", stat: "1 Dodge", cost: 0, statValue: 1 },
+      { name: "Optic", stat: "2 Dodge", cost: 1, statValue: 2 },
+      { name: "Crest", stat: "3 Dodge", cost: 2, statValue: 3 },
     ],
   },
   {
@@ -298,9 +300,9 @@ export const PART_DEFS: {
     label: "Core",
     attribute: "Health",
     variants: [
-      { name: "Lithe", stat: "80 HP", cost: 0 },
-      { name: "Bastion", stat: "120 HP", cost: 1 },
-      { name: "Reactor", stat: "100 HP", cost: 2 },
+      { name: "Lithe", stat: "80 HP", cost: 0, statValue: 80 },
+      { name: "Bastion", stat: "120 HP", cost: 1, statValue: 120 },
+      { name: "Reactor", stat: "100 HP", cost: 2, statValue: 100 },
     ],
   },
   {
@@ -308,9 +310,9 @@ export const PART_DEFS: {
     label: "Arms",
     attribute: "Weapon",
     variants: [
-      { name: "Blades", stat: "10 Dmg", cost: 0 },
-      { name: "Cannons", stat: "20 Dmg", cost: 1 },
-      { name: "Grapnels", stat: "15 Dmg", cost: 2 },
+      { name: "Blades", stat: "10 Dmg", cost: 0, statValue: 10 },
+      { name: "Cannons", stat: "20 Dmg", cost: 1, statValue: 20 },
+      { name: "Grapnels", stat: "15 Dmg", cost: 2, statValue: 15 },
     ],
   },
   {
@@ -318,9 +320,9 @@ export const PART_DEFS: {
     label: "Legs",
     attribute: "Boost",
     variants: [
-      { name: "Sprint", stat: "1 Boost", cost: 0 },
-      { name: "Treads", stat: "2 Boost", cost: 1 },
-      { name: "Hover", stat: "3 Boost", cost: 2 },
+      { name: "Sprint", stat: "1 Boost", cost: 0, statValue: 1 },
+      { name: "Treads", stat: "2 Boost", cost: 1, statValue: 2 },
+      { name: "Hover", stat: "3 Boost", cost: 2, statValue: 3 },
     ],
   },
 ];

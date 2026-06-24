@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { Sword, Crown, Coins, ArrowsClockwise, Robot } from "@phosphor-icons/react";
+import {
+  Sword,
+  Crown,
+  Coins,
+  ArrowsClockwise,
+  Robot,
+  CaretDown,
+} from "@phosphor-icons/react";
 import { Modal } from "@/components/ui/Modal";
 import { BattleScene } from "@/components/battle/BattleScene";
 import { StatPreview } from "@/components/battle/StatPreview";
@@ -98,6 +105,7 @@ export function BotBattleModal({
   const [runKey, setRunKey] = useState(0);
   const [result, setResult] = useState<BattleResult | null>(null);
   const [winner, setWinner] = useState<Side | null>(null);
+  const [showReport, setShowReport] = useState(false);
 
   // Strategies — the player controls A; the bot gets a random preset.
   const [strategyA, setStrategyA] = useState<Strategy>(DEFAULT_STRATEGY);
@@ -113,6 +121,7 @@ export function BotBattleModal({
     setStrategyB(randomBotStrategy());
     setResult(null);
     setWinner(null);
+    setShowReport(false);
     setAmount(initialStake > 0n ? formatVara(initialStake) : "25");
   }, [open, initialStake]);
 
@@ -160,6 +169,7 @@ export function BotBattleModal({
     const res = simulate(playerParts, bot.bodyParts, strategyA, strategyB, seed);
     setResult(res);
     setWinner(null);
+    setShowReport(false);
     setRunKey((k) => k + 1);
     setPhase("fighting");
   }
@@ -179,7 +189,7 @@ export function BotBattleModal({
     <Modal
       open={open}
       onClose={onClose}
-      maxWidth="max-w-2xl"
+      maxWidth="max-w-3xl"
       title="Practice · Play with Bot"
       subtitle="An offline sparring match — nothing is sent on-chain."
     >
@@ -366,13 +376,28 @@ export function BotBattleModal({
               </p>
             )}
 
-            {/* Strategy report */}
+            {/* Strategy report (collapsed by default to keep the arena large) */}
             {perf && (
-              <div className="rounded-xl border hairline bg-white/[0.03] p-4 space-y-3">
-                <h3 className="font-display text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                  Strategy Report
-                </h3>
-                <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl border hairline bg-white/[0.03]">
+                <button
+                  type="button"
+                  onClick={() => setShowReport((v) => !v)}
+                  className="flex w-full items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-white/[0.02]"
+                >
+                  <h3 className="font-display text-xs font-bold text-zinc-400 uppercase tracking-wider">
+                    📊 Strategy Report
+                  </h3>
+                  <CaretDown
+                    size={14}
+                    weight="bold"
+                    className={`ml-auto text-zinc-500 transition-transform ${
+                      showReport ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+                {showReport && (
+                  <div className="space-y-3 border-t hairline p-4">
+                    <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg border hairline bg-black/20 p-2.5">
                     <div className="font-mono text-[10px] text-cyan-400">🛡️ Dodge</div>
                     <div className="font-display text-lg font-bold text-zinc-100">
@@ -408,6 +433,8 @@ export function BotBattleModal({
                         {s}
                       </p>
                     ))}
+                  </div>
+                )}
                   </div>
                 )}
               </div>

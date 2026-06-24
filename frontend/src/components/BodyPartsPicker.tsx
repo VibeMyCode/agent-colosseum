@@ -23,6 +23,7 @@ function partCost(key: PartKey, level: number): number {
 
 export function BodyPartsPicker({ value, onChange }: Props) {
   const remaining = budgetRemaining(value);
+  const used = totalCost(value);
 
   function set(key: PartKey, variant: number) {
     onChange({ ...value, [key]: variant });
@@ -67,12 +68,13 @@ export function BodyPartsPicker({ value, onChange }: Props) {
     onChange(parts);
   }
 
+  // Green at exactly budget, ember while under, red when overspent.
   const budgetColor =
-    remaining < 0
+    used > POINT_BUDGET
       ? "text-red-400"
-      : remaining === 0
+      : used === POINT_BUDGET
         ? "text-emerald-400"
-        : "text-amber-300";
+        : "text-ember-300";
 
   return (
     <div className="space-y-3">
@@ -89,14 +91,14 @@ export function BodyPartsPicker({ value, onChange }: Props) {
         </button>
       </div>
 
-      {/* Budget readout — leading number is points remaining. */}
+      {/* Budget readout — leading number is points used. */}
       <div className="flex items-center justify-between rounded-lg border hairline bg-white/[0.02] px-3 py-2">
         <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
           Budget
         </span>
         <span className={`font-display text-sm font-bold ${budgetColor}`}>
-          {remaining}/{POINT_BUDGET}
-          {remaining < 0 && (
+          {used}/{POINT_BUDGET}
+          {used > POINT_BUDGET && (
             <span className="ml-1.5 font-mono text-[10px] font-normal text-red-400">
               · overspent
             </span>
@@ -116,7 +118,10 @@ export function BodyPartsPicker({ value, onChange }: Props) {
               </span>
             </div>
             <div className="space-y-1.5">
-              {def.variants.map((variant, i) => {
+              {def.variants
+                .map((variant, i) => ({ variant, i }))
+                .sort((a, b) => a.variant.statValue - b.variant.statValue)
+                .map(({ variant, i }) => {
                 const active = value[def.key] === i;
                 const currentCost = partCost(def.key, value[def.key]);
                 // Selecting this would push us over budget *and* costs more
