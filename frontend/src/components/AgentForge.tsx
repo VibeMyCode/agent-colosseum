@@ -187,11 +187,15 @@ export function AgentForge() {
           <span className="ml-1 hidden items-center gap-3 text-xs text-zinc-500 sm:flex">
             <span className="inline-flex items-center gap-1">
               <Trophy size={12} weight="fill" className="text-ember-400/80" />
-              {myAgent.wins}W
+              {myAgent.wins} Wins
             </span>
             <span className="inline-flex items-center gap-1">
               <Skull size={12} weight="fill" className="text-zinc-500" />
-              {myAgent.losses}L
+              {myAgent.losses} Losses
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Coins size={12} weight="fill" className="text-emerald-400/80" />
+              {formatVara(myAgent.totalEarned)} Earned
             </span>
           </span>
         )}
@@ -228,29 +232,35 @@ export function AgentForge() {
 
                 {/* Combat loadout these parts resolve to. */}
                 <StatPreview parts={parts} />
-
-                {isUpdate && myAgent && (
-                  <div className="grid grid-cols-3 gap-2 text-center">
-                    <Stat icon={<Trophy size={14} weight="fill" />} label="Wins" value={myAgent.wins} />
-                    <Stat icon={<Skull size={14} weight="fill" />} label="Losses" value={myAgent.losses} />
-                    <Stat
-                      icon={<Coins size={14} weight="fill" />}
-                      label="Earned"
-                      value={formatVara(myAgent.totalEarned)}
-                    />
-                  </div>
-                )}
               </div>
 
               {/* Form */}
               <div className="flex flex-col gap-5">
-                {/* Callsign + Budget + Randomize on one row */}
-                <div className="flex flex-wrap items-start gap-3 sm:flex-nowrap sm:items-center">
-                  {/* Callsign — flex grow */}
-                  <div className="min-w-0 flex-1">
+                {/* Two-column: Callsign + input | Chassis + Budget, Randomize top right */}
+                <div className="grid gap-x-4 gap-y-0 sm:grid-cols-[1fr_auto_auto]">
+                  {/* Row 1 col 1 */}
+                  <div>
                     <label className="mb-1.5 block font-mono text-xs text-zinc-500">
                       Callsign
                     </label>
+                  </div>
+                  {/* Row 1 col 2 */}
+                  <div>
+                    <label className="mb-1.5 block font-mono text-xs text-zinc-500">
+                      Chassis
+                    </label>
+                  </div>
+                  {/* Row 1 col 3 */}
+                  <button
+                    type="button"
+                    onClick={randomize}
+                    className="inline-flex items-center gap-1.5 self-start justify-self-end text-xs text-zinc-400 transition-colors hover:text-ember-300"
+                  >
+                    <Shuffle size={13} weight="bold" /> Randomize
+                  </button>
+
+                  {/* Row 2 col 1 */}
+                  <div>
                     <input
                       value={name}
                       onChange={(e) => setName(e.target.value)}
@@ -265,39 +275,25 @@ export function AgentForge() {
                       <span className="text-zinc-600">{name.length}/64</span>
                     </div>
                   </div>
-
-                  {/* Budget */}
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <label className="block font-mono text-xs text-zinc-500">
-                      Budget
-                    </label>
-                    <span className={`font-display text-sm font-bold ${budgetColor} whitespace-nowrap`}>
-                      {used} of {POINT_BUDGET} points used
-                      {used > POINT_BUDGET && (
-                        <span className="ml-1.5 font-mono text-[10px] font-normal text-red-400">
-                          · overspent
-                        </span>
-                      )}
-                    </span>
+                  {/* Row 2 col 2 */}
+                  <div>
+                    <div className="flex items-center gap-1.5 rounded-lg border hairline bg-white/[0.02] px-3 py-2">
+                      <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
+                        Budget
+                      </span>
+                      <span className={`font-display text-sm font-bold ${budgetColor}`}>
+                        {used} of {POINT_BUDGET} points used
+                        {used > POINT_BUDGET && (
+                          <span className="ml-1 font-mono text-[10px] font-normal text-red-400">
+                            · overspent
+                          </span>
+                        )}
+                      </span>
+                    </div>
                   </div>
-
-                  {/* Randomize — right-aligned */}
-                  <button
-                    type="button"
-                    onClick={randomize}
-                    className="inline-flex items-center gap-1.5 self-end pb-[5px] text-xs text-zinc-400 transition-colors hover:text-ember-300 sm:self-center"
-                  >
-                    <Shuffle size={13} weight="bold" /> Randomize
-                  </button>
                 </div>
 
-                {/* Chassis header + parts picker */}
-                <div>
-                  <label className="mb-3 block font-mono text-xs text-zinc-500">
-                    Chassis
-                  </label>
-                  <BodyPartsPicker value={parts} onChange={setParts} />
-                </div>
+                <BodyPartsPicker value={parts} onChange={setParts} />
 
                 <button onClick={submit} disabled={!canSubmit} className="btn-ember w-full sm:w-auto sm:self-end sm:!px-8">
                   {busy
@@ -316,23 +312,5 @@ export function AgentForge() {
         )}
       </AnimatePresence>
     </section>
-  );
-}
-
-function Stat({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-xl border hairline bg-white/[0.02] px-1.5 py-2.5">
-      <div className="flex items-center justify-center gap-1 text-ember-400">{icon}</div>
-      <div className="mt-0.5 font-display text-sm font-bold text-zinc-100">{value}</div>
-      <div className="text-[10px] uppercase tracking-wider text-zinc-600">{label}</div>
-    </div>
   );
 }
