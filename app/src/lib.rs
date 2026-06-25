@@ -39,7 +39,7 @@ const MAX_NAME_LEN: usize = 64;
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
-/// Lifecycle of a match: Waiting → Ready → Completed → Claimed.
+/// Lifecycle of a match: Waiting → Ready → Completed → Claimed or Closed.
 #[derive(Clone, PartialEq, Eq, Debug, Encode, Decode, TypeInfo)]
 #[codec(crate = sails_rs::scale_codec)]
 #[scale_info(crate = sails_rs::scale_info)]
@@ -52,6 +52,8 @@ pub enum MatchStatus {
     Completed,
     /// Winner has claimed the payout.
     Claimed,
+    /// Match closed; view-only.
+    Closed,
 }
 
 /// Cosmetic-only avatar configuration. Each field is a variant index in 0..=2
@@ -169,6 +171,7 @@ static mut NEXT_MATCH_ID: u64 = 1;
 static mut PROTOCOL_FEE_BPS: u16 = DEFAULT_FEE_BPS;
 static mut PAUSED: bool = false;
 static mut OWNER: ActorId = ActorId::zero();
+static mut REMATCH_INTENTS: Vec<(u64, ActorId)> = Vec::new();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -521,6 +524,102 @@ impl AgentColosseum {
         format!("Claimed:{}", payout)
     }
 
+    /// Declare intent to rematch. Both participants must call within 60s of Completed status
+    /// to auto-create a new match with the same stake. Only callable by match participants.
+    #[export]
+    pub fn declare_rematch(&mut self, match_id: u64) {
+        let caller = msg::source();
+        unsafe {
+            let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
+            match entry {
+                Some((_, m)) => {
+                    if !matches!(m.status, MatchStatus::Completed) {
+                        panic!("MatchNotCompleted");
+                    }
+                    if caller != m.agent_a && caller != m.agent_b {
+                        panic!("NotParticipant");
+                    }
+                    // Check if caller already declared intent
+                    if REMATCH_INTENTS.iter().any(|(id, agent)| id == &match_id && agent == &caller) {
+                        panic!("AlreadyDeclaredRematch");
+                    }
+                    REMATCH_INTENTS.push((match_id, caller));
+
+                    // Check if both participants have declared intent
+                    let intents_for_match: Vec<ActorId> = REMATCH_INTENTS
+                        .iter()
+                        .filter(|(id, _)| id == &match_id)
+                        .map(|(_, agent)| *agent)
+                        .collect();
+
+                    if intents_for_match.len() == 2 {
+                        // Auto-create new match with same agents and stake
+                        let (agent_a, agent_b, stake) = {
+                            let orig = MATCHES.iter().find(|(id, _)| id == &match_id).unwrap().1.clone();
+                            (orig.agent_a, orig.agent_b, orig.stake)
+                        };
+
+                        let new_match_id = NEXT_MATCH_ID;
+                        NEXT_MATCH_ID += 1;
+                        let now = exec::block_timestamp();
+                        MATCHES.push((
+                            new_match_id,
+                            Match {
+                                agent_a,
+                                agent_b,
+                                stake,
+                                status: MatchStatus::Waiting,
+                                winner: None,
+                                seed: now,
+                                timeline_hash: None,
+                                created_at: now,
+                            },
+                        ));
+
+                        // Clear intents for this match
+                        REMATCH_INTENTS.retain(|(id, _)| id != &match_id);
+
+                        self.emit_event(Event::MatchCreated {
+                            match_id: new_match_id,
+                            agent_a,
+                            agent_b,
+                            stake,
+                        })
+                        .expect("failed to emit MatchCreated");
+                    }
+                }
+                None => panic!("MatchNotFound"),
+            }
+        }
+    }
+
+    /// Close a match. Only callable by match participants or contract owner.
+    /// Match must be in Completed or Ready status.
+    #[export]
+    pub fn close_match(&mut self, match_id: u64) {
+        let caller = msg::source();
+        unsafe {
+            let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
+            match entry {
+                Some((_, m)) => {
+                    // Check authorization: must be participant or owner
+                    if caller != m.agent_a && caller != m.agent_b && caller != OWNER {
+                        panic!("Unauthorized");
+                    }
+                    // Match must be in Ready or Completed status
+                    if !matches!(m.status, MatchStatus::Ready | MatchStatus::Completed) {
+                        panic!("InvalidMatchStatus");
+                    }
+                    m.status = MatchStatus::Closed;
+
+                    // Clear any pending rematch intents for this match
+                    REMATCH_INTENTS.retain(|(id, _)| id != &match_id);
+                }
+                None => panic!("MatchNotFound"),
+            }
+        }
+    }
+
     // ─── Queries ──────────────────────────────────────────────────────
 
     #[export]
@@ -608,6 +707,7 @@ impl Program {
             NEXT_MATCH_ID = 1;
             PROTOCOL_FEE_BPS = DEFAULT_FEE_BPS;
             PAUSED = false;
+            REMATCH_INTENTS = Vec::new();
         }
         Self(())
     }

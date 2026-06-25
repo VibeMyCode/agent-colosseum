@@ -27,6 +27,8 @@ import { useTx } from "@/hooks/use-tx";
 import {
   actorIdToAddress,
   claimWinnings,
+  closeMatch,
+  declareRematch,
   deriveStrategyHash,
   formatVara,
   joinMatch,
@@ -40,7 +42,7 @@ import {
 } from "@/lib/colosseum";
 
 const FALLBACK: BodyParts = { head_type: 0, body_type: 0, arms_type: 0, legs_type: 0 };
-const STEPS: MatchStatus[] = ["Waiting", "Ready", "Completed", "Claimed"];
+const STEPS: MatchStatus[] = ["Waiting", "Ready", "Completed", "Closed"];
 
 function partsFor(agents: Agent[], id: string | null): BodyParts {
   if (!id) return FALLBACK;
@@ -61,13 +63,14 @@ export function BattleModal({
   onClose: () => void;
   onPlayBot?: (m: Match) => void;
 }) {
-  const { matches, agents, myActorId, config } = useColosseum();
+  const { matches, agents, myActorId, config, refresh } = useColosseum();
   const { account } = useWallet();
   const { run, busy } = useTx();
   const [winnerPick, setWinnerPick] = useState<"a" | "b">("a");
   const [watching, setWatching] = useState(false);
   const [runKey, setRunKey] = useState(0);
   const [countdown, setCountdown] = useState(0);
+  const [rematchCountdown, setRematchCountdown] = useState(0);
 
   const match = useMemo(
     () => matches.find((m) => m.id === matchId) ?? null,
@@ -123,6 +126,35 @@ export function BattleModal({
     const t = setInterval(() => setCountdown((c) => c - 1), 1000);
     return () => clearInterval(t);
   }, [countdown]);
+
+  // 60-second countdown after match becomes Completed for rematch intent
+  useEffect(() => {
+    if (match.status === "Completed" && rematchCountdown === 0) {
+      setRematchCountdown(60);
+    } else if (match.status !== "Completed") {
+      setRematchCountdown(0);
+    }
+  }, [match.id, match.status]);
+
+  useEffect(() => {
+    if (rematchCountdown <= 0) return;
+    const t = setInterval(() => setRematchCountdown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [rematchCountdown]);
+
+  // Auto-close match when rematch countdown expires
+  useEffect(() => {
+    if (rematchCountdown === 1 && match.status === "Completed") {
+      // Auto-close by calling closeMatch
+      run({
+        pending: "Closing match…",
+        success: "Match closed",
+        action: (sails, signArgs) => closeMatch(sails, signArgs, match!.id),
+      }).catch(() => {
+        // Ignore auto-close errors
+      });
+    }
+  }, [rematchCountdown]);
 
   const feeBps = BigInt(config?.feeBps ?? 200);
   const pool = match.stake * 2n;
@@ -339,6 +371,46 @@ export function BattleModal({
                   Match decided — <span className="text-ember-200">{aWon ? match.agentAName : match.agentBName}</span> won. Winnings await their claim.
                 </Hint>
               )}
+
+              {rematchCountdown > 0 && (isCreator || sameActor(myActorId, match.agentB)) && (
+                <div className="space-y-3 border-t border-white/10 pt-3">
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-plasma-500/25 bg-plasma-500/[0.06] px-4 py-3">
+                    <span className="font-display text-lg font-bold text-plasma-300">{rematchCountdown}s</span>
+                    <span className="text-sm text-zinc-400">to signal rematch intent</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={async () => {
+                        await run({
+                          pending: "Signaling rematch intent…",
+                          success: "Rematch intent recorded",
+                          successMessage: () => "Waiting for opponent to confirm…",
+                          action: (sails, signArgs) => declareRematch(sails, signArgs, match!.id),
+                        });
+                        refresh();
+                      }}
+                      disabled={busy}
+                      className="btn-plasma !py-2.5"
+                    >
+                      <ArrowsClockwise size={14} weight="fill" />
+                      {busy ? "Signaling…" : "Fight Again"}
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await run({
+                          pending: "Closing match…",
+                          success: "Match closed",
+                          action: (sails, signArgs) => closeMatch(sails, signArgs, match!.id),
+                        });
+                      }}
+                      disabled={busy}
+                      className="btn-ghost !py-2.5"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
@@ -346,6 +418,12 @@ export function BattleModal({
             <div className="flex items-center justify-center gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
               <Crown size={16} weight="fill" />
               {aWon ? match.agentAName : match.agentBName} claimed {formatVara(payout)} VARA.
+            </div>
+          )}
+
+          {match.status === "Closed" && (
+            <div className="flex items-center justify-center gap-2 rounded-xl border border-zinc-600/25 bg-zinc-600/10 px-4 py-3 text-sm text-zinc-400">
+              <span>Match closed · view only</span>
             </div>
           )}
         </div>

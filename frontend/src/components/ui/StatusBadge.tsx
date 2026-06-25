@@ -24,6 +24,11 @@ const STYLES: Record<
     cls: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25",
     dot: "bg-emerald-400",
   },
+  Closed: {
+    label: "Closed",
+    cls: "bg-zinc-600/10 text-zinc-400 border-zinc-600/25",
+    dot: "bg-zinc-500",
+  },
 };
 
 export function StatusBadge({ status }: { status: MatchStatus }) {

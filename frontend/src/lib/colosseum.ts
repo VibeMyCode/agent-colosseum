@@ -48,7 +48,7 @@ export type Agent = {
   totalEarned: bigint;
 };
 
-export type MatchStatus = "Waiting" | "Ready" | "Completed" | "Claimed";
+export type MatchStatus = "Waiting" | "Ready" | "Completed" | "Claimed" | "Closed";
 
 export type Match = {
   id: number;
@@ -177,7 +177,13 @@ function parseEnum(raw: unknown): string {
 
 export function parseStatus(raw: unknown): MatchStatus {
   const v = parseEnum(raw);
-  if (v === "Waiting" || v === "Ready" || v === "Completed" || v === "Claimed")
+  if (
+    v === "Waiting" ||
+    v === "Ready" ||
+    v === "Completed" ||
+    v === "Claimed" ||
+    v === "Closed"
+  )
     return v;
   return "Waiting";
 }
@@ -491,6 +497,26 @@ export async function claimWinnings(
   const svc = getService(sails);
   const tx = svc.functions.ClaimWinnings(matchId);
   return (await runTx(tx, signArgs)) as string;
+}
+
+export async function declareRematch(
+  sails: any,
+  signArgs: SignArgs,
+  matchId: number
+): Promise<void> {
+  const svc = getService(sails);
+  const tx = svc.functions.DeclareRematch(matchId);
+  await runTx(tx, signArgs);
+}
+
+export async function closeMatch(
+  sails: any,
+  signArgs: SignArgs,
+  matchId: number
+): Promise<void> {
+  const svc = getService(sails);
+  const tx = svc.functions.CloseMatch(matchId);
+  await runTx(tx, signArgs);
 }
 
 export async function setPaused(

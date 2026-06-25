@@ -285,3 +285,314 @@ async fn events_are_emitted() {
         }
     );
 }
+
+/// Non-participant cannot declare rematch.
+#[tokio::test]
+async fn declare_rematch_non_participant_fails() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // Stranger cannot declare rematch
+    let res = service
+        .declare_rematch(match_id)
+        .with_actor_id(STRANGER.into())
+        .await;
+    assert!(res.is_err(), "non-participant should not declare rematch");
+}
+
+/// Cannot declare rematch on non-Completed match.
+#[tokio::test]
+async fn declare_rematch_wrong_status_fails() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // Match is in Ready status; cannot declare rematch
+    let res = service
+        .declare_rematch(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await;
+    assert!(res.is_err(), "cannot declare rematch on Ready match");
+}
+
+/// Single participant declares rematch; intent stored but no auto-create.
+#[tokio::test]
+async fn declare_rematch_single_participant() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // Only Alice declares rematch
+    service
+        .declare_rematch(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+
+    // No new match should be created yet (next_id should still be 2)
+    let (_, _, next_id) = service.get_config().await.unwrap();
+    assert_eq!(next_id, 2);
+
+    // Original match is still Completed
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Completed);
+}
+
+/// Both participants declare rematch; auto-creates new match.
+#[tokio::test]
+async fn declare_rematch_both_participants_auto_creates() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // Both declare rematch
+    service
+        .declare_rematch(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .declare_rematch(match_id)
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+
+    // New match should be created: next_id = 3, new match is id 2
+    let (_, _, next_id) = service.get_config().await.unwrap();
+    assert_eq!(next_id, 3);
+
+    // New match exists with same agents and stake, Waiting status
+    let new_match = service.get_match(2).await.unwrap().unwrap();
+    assert_eq!(new_match.agent_a, AGENT_A.into());
+    assert_eq!(new_match.agent_b, Some(AGENT_B.into()));
+    assert_eq!(new_match.stake, STAKE);
+    assert_eq!(new_match.status, MatchStatus::Waiting);
+}
+
+/// Close match by participant.
+#[tokio::test]
+async fn close_match_by_participant() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // Alice closes the match
+    service
+        .close_match(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+
+    // Match should be Closed
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Closed);
+}
+
+/// Close match by owner.
+#[tokio::test]
+async fn close_match_by_owner() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // Owner closes a Ready match
+    service
+        .close_match(match_id)
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // Match should be Closed
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Closed);
+}
+
+/// Non-participant non-owner cannot close match.
+#[tokio::test]
+async fn close_match_unauthorized_fails() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // Stranger cannot close
+    let res = service
+        .close_match(match_id)
+        .with_actor_id(STRANGER.into())
+        .await;
+    assert!(res.is_err(), "non-participant non-owner should not close match");
+}
