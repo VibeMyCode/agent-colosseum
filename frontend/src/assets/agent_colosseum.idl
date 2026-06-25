@@ -66,8 +66,8 @@ service AgentColosseum {
   /// Register the caller as an agent. One agent per account; the agent id is
   /// the caller's `ActorId`. `body_parts` are cosmetic-only.
   RegisterAgent : (name: str, body_parts: BodyParts, strategy_hash: [u8, 32], strategy_url: str) -> actor_id;
-  /// Record the outcome of a Ready match. OWNER-only: the off-chain battle
-  /// engine is trusted to run the simulation and submit the verified result.
+  /// Record the outcome of a Ready match. The owner or either match
+  /// participant (agent A or B) may submit the verified result.
   SetBattleResult : (match_id: u64, winner: actor_id, timeline_hash: [u8, 32]) -> null;
   /// Signal intent to rematch. If both participants signal within 60s, a new
   /// match is auto-created with the same agents and stake. OWNER or any

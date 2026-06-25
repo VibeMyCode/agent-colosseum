@@ -433,42 +433,40 @@ impl AgentColosseum {
         .expect("failed to emit MatchJoined");
     }
 
-    /// Record the outcome of a Ready match. OWNER-only: the off-chain battle
-    /// engine is trusted to run the simulation and submit the verified result.
+    /// Record the outcome of a Ready match. The owner or either match
+    /// participant (agent A or B) may submit the verified result.
     #[export]
     pub fn set_battle_result(&mut self, match_id: u64, winner: ActorId, timeline_hash: [u8; 32]) {
         let caller = msg::source();
         unsafe {
-            if caller != OWNER {
-                panic!("Unauthorized");
-            }
-            let loser = {
-                let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
-                match entry {
-                    Some((_, m)) => {
-                        if !matches!(m.status, MatchStatus::Ready) {
-                            panic!("MatchNotReady");
-                        }
-                        if winner != m.agent_a && winner != m.agent_b {
-                            panic!("InvalidWinner");
-                        }
-                        m.winner = Some(winner);
-                        m.timeline_hash = Some(timeline_hash);
-                        m.status = MatchStatus::Completed;
-                        if winner == m.agent_a {
-                            m.agent_b
-                        } else {
-                            m.agent_a
-                        }
+            let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
+            match entry {
+                Some((_, m)) => {
+                    if caller != OWNER && caller != m.agent_a && caller != m.agent_b {
+                        panic!("Unauthorized");
                     }
-                    None => panic!("MatchNotFound"),
+                    if !matches!(m.status, MatchStatus::Ready) {
+                        panic!("MatchNotReady");
+                    }
+                    if winner != m.agent_a && winner != m.agent_b {
+                        panic!("InvalidWinner");
+                    }
+                    m.winner = Some(winner);
+                    m.timeline_hash = Some(timeline_hash);
+                    m.status = MatchStatus::Completed;
+                    let loser = if winner == m.agent_a {
+                        m.agent_b
+                    } else {
+                        m.agent_a
+                    };
+                    if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &winner) {
+                        config.wins += 1;
+                    }
+                    if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &loser) {
+                        config.losses += 1;
+                    }
                 }
-            };
-            if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &winner) {
-                config.wins += 1;
-            }
-            if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &loser) {
-                config.losses += 1;
+                None => panic!("MatchNotFound"),
             }
         }
         self.emit_event(Event::BattleResultSet {
