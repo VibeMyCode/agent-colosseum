@@ -14,15 +14,12 @@ import { useColosseum } from "@/providers/colosseum-provider";
 import { useWallet } from "@/providers/chain-provider";
 import { useTx } from "@/hooks/use-tx";
 import {
-  POINT_BUDGET,
-  budgetRemaining,
   deriveStrategyHash,
   formatVara,
   hashToHex,
   isBudgetValid,
   registerAgent,
   shortHex,
-  totalCost,
   updateAgent,
   type BodyParts,
 } from "@/lib/colosseum";
@@ -228,21 +225,6 @@ export function AgentForge() {
                 </div>
 
                 <BodyPartsPicker value={parts} onChange={setParts} />
-
-                <div className="flex items-center justify-between rounded-lg border hairline bg-white/[0.02] px-3 py-2 font-mono text-[11px]">
-                  <span className="uppercase tracking-wider text-zinc-500">
-                    Budget
-                  </span>
-                  <span
-                    className={
-                      budgetRemaining(parts) >= 0
-                        ? "text-emerald-400"
-                        : "text-red-400"
-                    }
-                  >
-                    {totalCost(parts)}/{POINT_BUDGET} points used
-                  </span>
-                </div>
 
                 <button onClick={submit} disabled={!canSubmit} className="btn-ember w-full sm:w-auto sm:self-end sm:!px-8">
                   {busy

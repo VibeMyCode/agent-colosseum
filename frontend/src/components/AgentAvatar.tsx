@@ -155,18 +155,7 @@ function renderBody(variant: number, uid: string, accent: string) {
   const steel = `url(#steel-${uid})`;
   const acc = `url(#accent-${uid})`;
   if (variant === 1) {
-    // Bastion — broad armored torso
-    return (
-      <g stroke={STEEL_DARK} strokeWidth="1.2">
-        <path d="M38 56 L82 56 L86 96 L60 104 L34 96 Z" fill={steel} />
-        <path d="M48 58 L72 58 L74 84 L60 90 L46 84 Z" fill={acc} opacity="0.5" />
-        <rect x="55" y="64" width="10" height="20" rx="3" fill={STEEL_DARK} />
-        <rect x="40" y="50" width="40" height="10" rx="4" fill={STEEL_LIGHT} />
-      </g>
-    );
-  }
-  if (variant === 2) {
-    // Reactor — slim torso with a glowing core ring
+    // Reactor — slim torso with a glowing core ring (PART_DEFS index 1 = Reactor)
     return (
       <g stroke={STEEL_DARK} strokeWidth="1.2">
         <path d="M44 54 L76 54 L80 98 L60 104 L40 98 Z" fill={steel} />
@@ -185,6 +174,17 @@ function renderBody(variant: number, uid: string, accent: string) {
       </g>
     );
   }
+  if (variant === 2) {
+    // Bastion — broad armored torso (PART_DEFS index 2 = Bastion)
+    return (
+      <g stroke={STEEL_DARK} strokeWidth="1.2">
+        <path d="M38 56 L82 56 L86 96 L60 104 L34 96 Z" fill={steel} />
+        <path d="M48 58 L72 58 L74 84 L60 90 L46 84 Z" fill={acc} opacity="0.5" />
+        <rect x="55" y="64" width="10" height="20" rx="3" fill={STEEL_DARK} />
+        <rect x="40" y="50" width="40" height="10" rx="4" fill={STEEL_LIGHT} />
+      </g>
+    );
+  }
   // Lithe — slim plated torso
   return (
     <g stroke={STEEL_DARK} strokeWidth="1.2">
@@ -199,7 +199,18 @@ function renderBody(variant: number, uid: string, accent: string) {
 function renderArms(variant: number, uid: string, accent: string) {
   const steel = `url(#steel-${uid})`;
   if (variant === 1) {
-    // Cannons — barrel arms
+    // Grapnels — claw arms (PART_DEFS index 1 = Grapnels)
+    return (
+      <g stroke={STEEL_DARK} strokeWidth="1">
+        <rect x="26" y="58" width="12" height="30" rx="5" fill={steel} />
+        <rect x="82" y="58" width="12" height="30" rx="5" fill={steel} />
+        <path d="M26 88 l-6 8 m6 -8 l0 10 m0 -10 l6 8" stroke={accent} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+        <path d="M94 88 l6 8 m-6 -8 l0 10 m0 -10 l-6 8" stroke={accent} strokeWidth="2.5" fill="none" strokeLinecap="round" />
+      </g>
+    );
+  }
+  if (variant === 2) {
+    // Cannons — barrel arms (PART_DEFS index 2 = Cannons)
     return (
       <g stroke={STEEL_DARK} strokeWidth="1">
         <rect x="22" y="58" width="16" height="34" rx="6" fill={steel} />
@@ -208,17 +219,6 @@ function renderArms(variant: number, uid: string, accent: string) {
         <circle cx="90" cy="92" r="7" fill={STEEL_DARK} />
         <circle cx="30" cy="92" r="3.5" fill={accent} opacity="0.85" />
         <circle cx="90" cy="92" r="3.5" fill={accent} opacity="0.85" />
-      </g>
-    );
-  }
-  if (variant === 2) {
-    // Grapnels — claw arms
-    return (
-      <g stroke={STEEL_DARK} strokeWidth="1">
-        <rect x="26" y="58" width="12" height="30" rx="5" fill={steel} />
-        <rect x="82" y="58" width="12" height="30" rx="5" fill={steel} />
-        <path d="M26 88 l-6 8 m6 -8 l0 10 m0 -10 l6 8" stroke={accent} strokeWidth="2.5" fill="none" strokeLinecap="round" />
-        <path d="M94 88 l6 8 m-6 -8 l0 10 m0 -10 l-6 8" stroke={accent} strokeWidth="2.5" fill="none" strokeLinecap="round" />
       </g>
     );
   }

@@ -21,7 +21,7 @@ export const ZERO_ACTOR =
 
 // Players have a fixed point budget to spend across their four body parts.
 // Each part variant costs 0 (weak), 1 (medium) or 2 (strong) points.
-export const POINT_BUDGET = 6;
+export const POINT_BUDGET = 5;
 
 // ---------------------------------------------------------------------------
 // Domain types
@@ -248,8 +248,22 @@ export function parseConfig(raw: unknown): Config {
 /** Derive a deterministic 32-byte strategy hash from arbitrary text. */
 export async function deriveStrategyHash(seed: string): Promise<number[]> {
   const bytes = new TextEncoder().encode(seed || "agent-colosseum");
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest));
+  // crypto.subtle is undefined on HTTP pages. Fall back to a simple hash.
+  if (typeof crypto !== "undefined" && crypto.subtle?.digest) {
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest));
+  }
+  // Deterministic fallback: simple FNV-style hash expanded to 32 bytes
+  const hash = new Uint8Array(32);
+  let h = 0x811c9dc5;
+  for (const b of bytes) {
+    h = Math.imul(h ^ b, 0x01000193);
+    hash[b % 32] ^= h & 0xff;
+  }
+  for (let i = 0; i < 32; i++) {
+    hash[i] ^= (h >> (i % 8)) & 0xff;
+  }
+  return Array.from(hash);
 }
 
 export function hashToHex(bytes: number[] | Uint8Array): string {
