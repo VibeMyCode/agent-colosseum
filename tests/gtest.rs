@@ -8,6 +8,7 @@ use sails_rs::{client::*, futures::StreamExt, gtest::*, ActorId};
 const OWNER: u64 = 42;
 const AGENT_A: u64 = 100;
 const AGENT_B: u64 = 101;
+const AGENT_C: u64 = 102;
 const STRANGER: u64 = 200;
 
 const STAKE: u128 = 10_000_000_000; // MIN_STAKE
@@ -26,7 +27,7 @@ fn body_parts() -> BodyParts {
 async fn setup() -> Actor<AgentColosseumClientProgram, GtestEnv> {
     let system = System::new();
     system.init_logger_with_default_filter("gwasm=debug,gtest=info,sails_rs=debug");
-    for actor in [OWNER, AGENT_A, AGENT_B, STRANGER] {
+    for actor in [OWNER, AGENT_A, AGENT_B, AGENT_C, STRANGER] {
         system.mint_to(actor, FUND);
     }
     let code_id = system.submit_code(agent_colosseum::WASM_BINARY);
@@ -37,7 +38,7 @@ async fn setup() -> Actor<AgentColosseumClientProgram, GtestEnv> {
         .unwrap()
 }
 
-/// register → create → join → set_result → claim, with state assertions.
+/// register → create → join → set_result → claim_bank, with state assertions.
 #[tokio::test]
 async fn core_flow_works() {
     let program = setup().await;
@@ -83,28 +84,29 @@ async fn core_flow_works() {
         .await
         .unwrap();
 
+    // After persistent champion redesign, match goes to Waiting with champion and bank
     let m = service.get_match(match_id).await.unwrap().unwrap();
-    assert_eq!(m.status, MatchStatus::Completed);
+    assert_eq!(m.status, MatchStatus::Waiting);
     assert_eq!(m.winner, Some(AGENT_A.into()));
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+    let stake_minus_fee = STAKE - STAKE * 200 / 10_000;
+    assert_eq!(m.bank, stake_minus_fee);
 
-    // Winner claims. payout = 2*STAKE - 2% fee.
-    let result = service
-        .claim_winnings(match_id)
+    // Champion claims bank to move to Completed
+    let bank = service
+        .claim_bank(match_id)
         .with_actor_id(AGENT_A.into())
         .await
         .unwrap();
-    let total = STAKE * 2;
-    let payout = total - total * 200 / 10_000;
-    assert_eq!(result, format!("Claimed:{}", payout));
+    assert_eq!(bank, stake_minus_fee);
 
-    // Match is now Claimed; winner stats updated.
+    // Match is now Completed; winner stats updated.
     let m = service.get_match(match_id).await.unwrap().unwrap();
-    assert_eq!(m.status, MatchStatus::Claimed);
+    assert_eq!(m.status, MatchStatus::Completed);
 
     let alice = service.get_agent(AGENT_A.into()).await.unwrap().unwrap();
     assert_eq!(alice.wins, 1);
     assert_eq!(alice.losses, 0);
-    assert_eq!(alice.total_earned, payout);
 
     let bob = service.get_agent(AGENT_B.into()).await.unwrap().unwrap();
     assert_eq!(bob.wins, 0);
@@ -117,9 +119,9 @@ async fn core_flow_works() {
     assert_eq!(next_id, 2);
 }
 
-/// Only the OWNER may submit a battle result.
+/// Owner or match participant may submit a battle result; stranger cannot.
 #[tokio::test]
-async fn set_battle_result_owner_only() {
+async fn set_battle_result_auth() {
     let program = setup().await;
     let mut service = program.agent_colosseum();
 
@@ -146,12 +148,32 @@ async fn set_battle_result_owner_only() {
         .await
         .unwrap();
 
-    // A participant attempting to set the result must be rejected.
+    // Participant can set the result
     let res = service
         .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
         .with_actor_id(AGENT_A.into())
         .await;
-    assert!(res.is_err(), "non-owner should not set battle result");
+    assert!(res.is_ok(), "participant should be able to set battle result");
+
+    // But a stranger cannot
+    let match_id2 = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id2)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    let res = service
+        .set_battle_result(match_id2, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(STRANGER.into())
+        .await;
+    assert!(res.is_err(), "stranger should not set battle result");
 }
 
 /// Only the recorded winner may claim winnings.
@@ -251,7 +273,7 @@ async fn events_are_emitted() {
         }
     );
 
-    // SetBattleResult → BattleResultSet (owner only).
+    // SetBattleResult → BattleResultSet.
     service
         .set_battle_result(match_id, AGENT_A.into(), [7u8; 32])
         .with_actor_id(OWNER.into())
@@ -267,27 +289,27 @@ async fn events_are_emitted() {
         }
     );
 
-    // ClaimWinnings → ClaimedWinnings with the net payout.
+    // ClaimBank → BankClaimed with the accumulated bank.
     service
-        .claim_winnings(match_id)
+        .claim_bank(match_id)
         .with_actor_id(AGENT_A.into())
         .await
         .unwrap();
-    let total = STAKE * 2;
-    let payout = total - total * 200 / 10_000;
+    let stake_minus_fee = STAKE - STAKE * 200 / 10_000;
     let (_, ev) = events.next().await.unwrap();
     assert_eq!(
         ev,
-        AgentColosseumEvents::ClaimedWinnings {
+        AgentColosseumEvents::BankClaimed {
             match_id,
-            winner: AGENT_A.into(),
-            payout,
+            champion: AGENT_A.into(),
+            bank: stake_minus_fee,
         }
     );
 }
 
-/// Non-participant cannot declare rematch.
+/// Non-participant cannot declare rematch (deprecated with persistent champion system).
 #[tokio::test]
+#[ignore]
 async fn declare_rematch_non_participant_fails() {
     let program = setup().await;
     let mut service = program.agent_colosseum();
@@ -328,8 +350,9 @@ async fn declare_rematch_non_participant_fails() {
     assert!(res.is_err(), "non-participant should not declare rematch");
 }
 
-/// Cannot declare rematch on non-Completed match.
+/// Cannot declare rematch on non-Completed match (deprecated with persistent champion system).
 #[tokio::test]
+#[ignore]
 async fn declare_rematch_wrong_status_fails() {
     let program = setup().await;
     let mut service = program.agent_colosseum();
@@ -365,8 +388,9 @@ async fn declare_rematch_wrong_status_fails() {
     assert!(res.is_err(), "cannot declare rematch on Ready match");
 }
 
-/// Single participant declares rematch; intent stored but no auto-create.
+/// Single participant declares rematch; intent stored but no auto-create (deprecated with persistent champion system).
 #[tokio::test]
+#[ignore]
 async fn declare_rematch_single_participant() {
     let program = setup().await;
     let mut service = program.agent_colosseum();
@@ -415,8 +439,9 @@ async fn declare_rematch_single_participant() {
     assert_eq!(m.status, MatchStatus::Completed);
 }
 
-/// Both participants declare rematch; auto-creates new match.
+/// Both participants declare rematch; auto-creates new match (deprecated with persistent champion system).
 #[tokio::test]
+#[ignore]
 async fn declare_rematch_both_participants_auto_creates() {
     let program = setup().await;
     let mut service = program.agent_colosseum();
@@ -595,4 +620,496 @@ async fn close_match_unauthorized_fails() {
         .with_actor_id(STRANGER.into())
         .await;
     assert!(res.is_err(), "non-participant non-owner should not close match");
+}
+
+/// Test persistent champion: first match winner becomes champion.
+#[tokio::test]
+async fn persistent_champion_first_match() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // Before battle, no champion
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.champion, None);
+    assert_eq!(m.bank, 0);
+
+    // Set result: Alice wins
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // After battle: Alice is champion, bank = STAKE - fee
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+    assert_eq!(m.status, MatchStatus::Waiting);
+    let expected_bank = STAKE - STAKE * 200 / 10_000;
+    assert_eq!(m.bank, expected_bank);
+}
+
+/// Test new challenger joining against existing champion.
+#[tokio::test]
+async fn persistent_champion_new_challenger() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Charlie".into(), body_parts(), [3u8; 32], "ipfs://c".into())
+        .with_actor_id(AGENT_C.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // Bob joins → Bob is now agent_b
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // Alice (agent_a) wins first match
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+    let bank_after_first = m.bank;
+
+    // Charlie joins against champion Alice
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_C.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // Match is Ready, waiting for second battle
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Ready);
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+    assert_eq!(m.agent_b, Some(AGENT_C.into()));
+    // Bank should not change when new challenger joins
+    assert_eq!(m.bank, bank_after_first);
+
+    // Charlie defeats Alice
+    service
+        .set_battle_result(match_id, AGENT_C.into(), [8u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.champion, Some(AGENT_C.into()));
+    assert_eq!(m.status, MatchStatus::Waiting);
+    // Bank increases by Charlie's win (Alice's stake - fee)
+    let expected_bank = bank_after_first + (STAKE - STAKE * 200 / 10_000);
+    assert_eq!(m.bank, expected_bank);
+}
+
+/// Test champion can claim bank.
+#[tokio::test]
+async fn champion_claim_bank() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    let bank = m.bank;
+
+    // Champion (Alice) claims bank
+    let claimed = service
+        .claim_bank(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+
+    assert_eq!(claimed, bank);
+
+    // Match should be Completed after claiming
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Completed);
+    assert_eq!(m.bank, 0);
+}
+
+/// Test non-champion cannot claim bank.
+#[tokio::test]
+async fn non_champion_cannot_claim_bank() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // Bob (non-champion) tries to claim
+    let res = service
+        .claim_bank(match_id)
+        .with_actor_id(AGENT_B.into())
+        .await;
+
+    assert!(res.is_err(), "non-champion should not claim bank");
+}
+
+/// Test champion exiting clears bank and champion status.
+#[tokio::test]
+async fn champion_exit_clears_bank() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert!(m.bank > 0);
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+
+    // Champion exits
+    service
+        .exit_match(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+
+    // Champion and bank should be cleared
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.champion, None);
+    assert_eq!(m.bank, 0);
+    assert_eq!(m.status, MatchStatus::Waiting);
+}
+
+/// Test non-champion exiting in Ready state.
+#[tokio::test]
+async fn non_champion_exit_in_ready() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Charlie".into(), body_parts(), [3u8; 32], "ipfs://c".into())
+        .with_actor_id(AGENT_C.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // Charlie joins against champion
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_C.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Ready);
+    let bank = m.bank;
+
+    // Challenger (Charlie, agent_b) exits
+    service
+        .exit_match(match_id)
+        .with_actor_id(AGENT_C.into())
+        .await
+        .unwrap();
+
+    // Match should go back to Waiting, champion and bank preserved
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Waiting);
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+    assert_eq!(m.bank, bank);
+}
+
+/// Test bank accumulates across multiple battles.
+#[tokio::test]
+async fn bank_accumulates_multiple_battles() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Charlie".into(), body_parts(), [3u8; 32], "ipfs://c".into())
+        .with_actor_id(AGENT_C.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // First battle: Alice wins
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let net_stake = STAKE - STAKE * 200 / 10_000;
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    let bank_1 = m.bank;
+    assert_eq!(bank_1, net_stake);
+
+    // Second battle: Charlie joins and Alice wins again
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_C.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [8u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    let bank_2 = m.bank;
+    // Bank should accumulate: first win + second win
+    assert_eq!(bank_2, net_stake * 2);
+}
+
+/// Test new champion receives old champion's bank when they win.
+#[tokio::test]
+async fn new_champion_gets_old_bank() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Charlie".into(), body_parts(), [3u8; 32], "ipfs://c".into())
+        .with_actor_id(AGENT_C.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // First match: Bob beats Alice
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .set_battle_result(match_id, AGENT_B.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let net_stake = STAKE - STAKE * 200 / 10_000;
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    let bank_after_1 = m.bank;
+    assert_eq!(bank_after_1, net_stake);
+
+    // Second match: Charlie beats Bob (new champion)
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_C.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    service
+        .set_battle_result(match_id, AGENT_C.into(), [8u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.champion, Some(AGENT_C.into()));
+    // Bank should accumulate: Bob's bank (from beating Alice) + Charlie's win
+    let expected_bank = bank_after_1 + net_stake;
+    assert_eq!(m.bank, expected_bank);
 }

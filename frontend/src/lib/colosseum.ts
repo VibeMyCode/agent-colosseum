@@ -60,6 +60,8 @@ export type Match = {
   status: MatchStatus;
   seed: bigint;
   winner: string | null;
+  champion: string | null;
+  bank: bigint;
 };
 
 export type Config = {
@@ -232,6 +234,8 @@ export function parseMatch(raw: unknown): Match | null {
     status: parseStatus(o.status),
     seed: toBig(o.seed),
     winner: optActor(o.winner),
+    champion: optActor(o.champion),
+    bank: toBig(o.bank),
   };
 }
 
@@ -497,6 +501,27 @@ export async function claimWinnings(
   const svc = getService(sails);
   const tx = svc.functions.ClaimWinnings(matchId);
   return (await runTx(tx, signArgs)) as string;
+}
+
+export async function claimBank(
+  sails: any,
+  signArgs: SignArgs,
+  matchId: number
+): Promise<bigint> {
+  const svc = getService(sails);
+  const tx = svc.functions.ClaimBank(matchId);
+  const result = await runTx(tx, signArgs);
+  return toBig(result);
+}
+
+export async function exitMatch(
+  sails: any,
+  signArgs: SignArgs,
+  matchId: number
+): Promise<void> {
+  const svc = getService(sails);
+  const tx = svc.functions.ExitMatch(matchId);
+  await runTx(tx, signArgs);
 }
 
 export async function declareRematch(

@@ -97,6 +97,8 @@ pub struct Match {
     pub seed: u64,
     pub timeline_hash: Option<[u8; 32]>,
     pub created_at: u64,
+    pub champion: Option<ActorId>,
+    pub bank: u128,
 }
 
 /// Read-model for a match returned by queries.
@@ -113,6 +115,8 @@ pub struct MatchView {
     pub status: MatchStatus,
     pub seed: u64,
     pub winner: Option<ActorId>,
+    pub champion: Option<ActorId>,
+    pub bank: u128,
 }
 
 /// Read-model for an agent returned by queries.
@@ -161,6 +165,17 @@ pub enum Event {
         winner: ActorId,
         payout: u128,
     },
+    /// Champion claimed their accumulated bank, closing the match.
+    BankClaimed {
+        match_id: u64,
+        champion: ActorId,
+        bank: u128,
+    },
+    /// A participant exited the match.
+    MatchExited {
+        match_id: u64,
+        participant: ActorId,
+    },
 }
 
 // ─── Static State ────────────────────────────────────────────────────────
@@ -198,6 +213,8 @@ fn to_match_view(agents: &[(ActorId, AgentConfig)], id: u64, m: &Match) -> Match
         status: m.status.clone(),
         seed: m.seed,
         winner: m.winner,
+        champion: m.champion,
+        bank: m.bank,
     }
 }
 
@@ -374,6 +391,8 @@ impl AgentColosseum {
                     seed: now,
                     timeline_hash: None,
                     created_at: now,
+                    champion: None,
+                    bank: 0,
                 },
             ));
             if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &operator) {
@@ -391,7 +410,8 @@ impl AgentColosseum {
         match_id
     }
 
-    /// Join a waiting match as agent B, matching the stake with attached value.
+    /// Join a waiting match. If no champion exists, joiner joins as agent B in a normal match.
+    /// If a champion exists, joiner becomes the challenger against the champion.
     #[export]
     pub fn join_match(&mut self, match_id: u64) {
         let operator = msg::source();
@@ -402,22 +422,38 @@ impl AgentColosseum {
             if !AGENTS.iter().any(|(id, _)| id == &operator) {
                 panic!("AgentNotFound");
             }
-            let stake = {
+            let (stake, _has_champion) = {
                 let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
                 match entry {
                     Some((_, m)) => {
                         if !matches!(m.status, MatchStatus::Waiting) {
                             panic!("MatchNotWaiting");
                         }
-                        if m.agent_a == operator {
-                            panic!("CannotJoinOwnMatch");
+                        let has_champ = m.champion.is_some();
+                        if has_champ {
+                            // Joining against existing champion
+                            if operator == m.agent_a || operator == m.agent_b {
+                                panic!("CannotJoinOwnMatch");
+                            }
+                            // Challenger pays stake from wallet
+                            if msg::value() < m.stake {
+                                panic!("InsufficientValue");
+                            }
+                            // Set agent_b to the new challenger
+                            m.agent_b = operator;
+                            m.status = MatchStatus::Ready;
+                        } else {
+                            // First join, becoming the opponent to agent_a
+                            if m.agent_a == operator {
+                                panic!("CannotJoinOwnMatch");
+                            }
+                            if msg::value() < m.stake {
+                                panic!("InsufficientValue");
+                            }
+                            m.agent_b = operator;
+                            m.status = MatchStatus::Ready;
                         }
-                        if msg::value() < m.stake {
-                            panic!("InsufficientValue");
-                        }
-                        m.agent_b = operator;
-                        m.status = MatchStatus::Ready;
-                        m.stake
+                        (m.stake, has_champ)
                     }
                     None => panic!("MatchNotFound"),
                 }
@@ -435,6 +471,7 @@ impl AgentColosseum {
 
     /// Record the outcome of a Ready match. The owner or either match
     /// participant (agent A or B) may submit the verified result.
+    /// Winner becomes the champion; match status returns to Waiting with accumulated bank.
     #[export]
     pub fn set_battle_result(&mut self, match_id: u64, winner: ActorId, timeline_hash: [u8; 32]) {
         let caller = msg::source();
@@ -453,12 +490,24 @@ impl AgentColosseum {
                     }
                     m.winner = Some(winner);
                     m.timeline_hash = Some(timeline_hash);
-                    m.status = MatchStatus::Completed;
+
                     let loser = if winner == m.agent_a {
                         m.agent_b
                     } else {
                         m.agent_a
                     };
+
+                    // Calculate fee and add to bank
+                    let fee = m.stake * (PROTOCOL_FEE_BPS as u128) / 10_000;
+                    let net_stake = m.stake - fee;
+                    m.bank += net_stake;
+
+                    // Winner becomes the new champion
+                    m.champion = Some(winner);
+
+                    // Status goes back to Waiting with the new champion
+                    m.status = MatchStatus::Waiting;
+
                     if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &winner) {
                         config.wins += 1;
                     }
@@ -522,6 +571,79 @@ impl AgentColosseum {
         format!("Claimed:{}", payout)
     }
 
+    /// Champion claims accumulated bank, closing the match.
+    /// Only the champion may call this function.
+    #[export]
+    pub fn claim_bank(&mut self, match_id: u64) -> u128 {
+        let caller = msg::source();
+        let bank = unsafe {
+            let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
+            match entry {
+                Some((_, m)) => {
+                    if !matches!(m.status, MatchStatus::Waiting) {
+                        panic!("MatchNotWaiting");
+                    }
+                    let champ = match m.champion {
+                        Some(c) => c,
+                        None => panic!("NoChampion"),
+                    };
+                    if caller != champ {
+                        panic!("NotChampion");
+                    }
+                    let bank_amount = m.bank;
+                    m.status = MatchStatus::Completed;
+                    m.bank = 0;
+                    bank_amount
+                }
+                None => panic!("MatchNotFound"),
+            }
+        };
+        self.emit_event(Event::BankClaimed {
+            match_id,
+            champion: caller,
+            bank,
+        })
+        .expect("failed to emit BankClaimed");
+        bank
+    }
+
+    /// Exit a match. Any participant may call this.
+    /// If the champion exits, their bank is cleared and champion is set to None.
+    /// Match status returns to Waiting if it was in Ready; otherwise stays in current state.
+    #[export]
+    pub fn exit_match(&mut self, match_id: u64) {
+        let caller = msg::source();
+        unsafe {
+            let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
+            match entry {
+                Some((_, m)) => {
+                    if caller != m.agent_a && caller != m.agent_b {
+                        panic!("NotParticipant");
+                    }
+                    if caller == m.champion.unwrap_or(ActorId::zero()) {
+                        // Champion is exiting
+                        m.champion = None;
+                        m.bank = 0;
+                        if matches!(m.status, MatchStatus::Ready) {
+                            m.status = MatchStatus::Waiting;
+                        }
+                    } else {
+                        // Non-champion exits
+                        if matches!(m.status, MatchStatus::Ready) {
+                            m.status = MatchStatus::Waiting;
+                        }
+                    }
+                }
+                None => panic!("MatchNotFound"),
+            }
+        }
+        self.emit_event(Event::MatchExited {
+            match_id,
+            participant: caller,
+        })
+        .expect("failed to emit MatchExited");
+    }
+
     /// Declare intent to rematch. Both participants must call within 60s of Completed status
     /// to auto-create a new match with the same stake. Only callable by match participants.
     #[export]
@@ -571,6 +693,8 @@ impl AgentColosseum {
                                 seed: now,
                                 timeline_hash: None,
                                 created_at: now,
+                                champion: None,
+                                bank: 0,
                             },
                         ));
 
@@ -592,7 +716,7 @@ impl AgentColosseum {
     }
 
     /// Close a match. Only callable by match participants or contract owner.
-    /// Match must be in Completed or Ready status.
+    /// Match must be in Ready, Waiting, or Completed status.
     #[export]
     pub fn close_match(&mut self, match_id: u64) {
         let caller = msg::source();
@@ -604,8 +728,8 @@ impl AgentColosseum {
                     if caller != m.agent_a && caller != m.agent_b && caller != OWNER {
                         panic!("Unauthorized");
                     }
-                    // Match must be in Ready or Completed status
-                    if !matches!(m.status, MatchStatus::Ready | MatchStatus::Completed) {
+                    // Match must be in Ready, Waiting, or Completed status
+                    if !matches!(m.status, MatchStatus::Ready | MatchStatus::Waiting | MatchStatus::Completed) {
                         panic!("InvalidMatchStatus");
                     }
                     m.status = MatchStatus::Closed;

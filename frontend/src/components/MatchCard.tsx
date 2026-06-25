@@ -115,6 +115,16 @@ export function MatchCard({
             <span className="text-xs font-medium text-zinc-500">VARA</span>
           </span>
         </div>
+        {match.champion && match.bank > 0n && (
+          <div className="mt-2.5 flex items-center gap-2 border-t hairline pt-2.5">
+            <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600">
+              <Crown size={11} weight="fill" /> Bank
+            </span>
+            <span className="ml-auto font-display text-xs font-bold text-ember-200">
+              {formatVara(match.bank)} VARA
+            </span>
+          </div>
+        )}
         {priv && (
           <div className="mt-2.5 flex items-center gap-2 border-t hairline pt-2.5">
             <span className="shrink-0 text-[11px] text-zinc-600">Invite</span>

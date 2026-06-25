@@ -25,6 +25,7 @@ import { useWallet } from "@/providers/chain-provider";
 import { useTx } from "@/hooks/use-tx";
 import {
   actorIdToAddress,
+  claimBank,
   claimWinnings,
   closeMatch,
   declareRematch,
@@ -112,14 +113,14 @@ export function BattleModal({
     return () => clearInterval(t);
   }, [countdown]);
 
-  // 60-second countdown after match becomes Completed for rematch intent
+  // 60-second countdown after match becomes Completed for rematch intent (legacy flow)
   useEffect(() => {
-    if (match?.status === "Completed" && rematchCountdown === 0) {
+    if (match?.status === "Completed" && !match?.champion && rematchCountdown === 0) {
       setRematchCountdown(60);
     } else if (match?.status !== "Completed") {
       setRematchCountdown(0);
     }
-  }, [match?.id, match?.status]);
+  }, [match?.id, match?.status, match?.champion]);
 
   useEffect(() => {
     if (rematchCountdown <= 0) return;
@@ -158,10 +159,12 @@ export function BattleModal({
   const bParts = partsFor(agents, match.agentB);
   const aWon = sameActor(match.winner, match.agentA);
   const bWon = sameActor(match.winner, match.agentB);
-  const decided = match.status === "Completed" || match.status === "Claimed";
+  const isChampion = match.champion ? sameActor(myActorId, match.champion) : false;
+  const decided = match.status === "Completed" || match.status === "Claimed" || (match.status === "Waiting" && Boolean(match.champion));
 
   const isCreator = sameActor(myActorId, match.agentA);
   const isWinner = sameActor(myActorId, match.winner);
+  const isParticipant = isCreator || sameActor(myActorId, match.agentB);
   const registered = Boolean(agents.find((a) => sameActor(a.agentId, myActorId)));
   const isOwner = sameActor(myActorId, OWNER_ACTOR_ID);
 
@@ -315,7 +318,7 @@ export function BattleModal({
 
         {/* Actions */}
         <div className="space-y-3">
-          {match.status === "Waiting" && (
+          {match.status === "Waiting" && !match.champion && (
             <>
               {isCreator ? (
                 <Hint>You opened this match — waiting for a challenger to stake {formatVara(match.stake)} VARA.</Hint>
@@ -347,6 +350,49 @@ export function BattleModal({
             </>
           )}
 
+          {match.status === "Waiting" && match.champion && (
+            <>
+              {isChampion ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-ember-500/25 bg-ember-500/[0.06] px-4 py-3">
+                    <Crown size={18} weight="fill" className="text-ember-400" />
+                    <span className="font-display font-bold text-ember-200">🏆 You are champion!</span>
+                  </div>
+                  <div className="text-sm text-zinc-400">
+                    Bank: <span className="text-ember-200 font-bold">{formatVara(match.bank)}</span>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      const claimed = await run({
+                        pending: "Claiming bank…",
+                        success: "Bank claimed",
+                        successMessage: () => `Claimed ${formatVara(match.bank)} VARA`,
+                        action: (sails, signArgs) => claimBank(sails, signArgs, match!.id),
+                      });
+                      if (claimed !== null) onClose();
+                    }}
+                    disabled={busy}
+                    className="btn-ember w-full !py-3"
+                  >
+                    <Coins size={18} weight="fill" />
+                    {busy ? "Claiming…" : `Claim Bank · ${formatVara(match.bank)} VARA`}
+                  </button>
+                </div>
+              ) : !account ? (
+                <Hint>Connect a wallet to challenge the champion.</Hint>
+              ) : !registered ? (
+                <Hint>Forge an agent before stepping into the arena.</Hint>
+              ) : (
+                <div className="space-y-3">
+                  <button onClick={join} disabled={busy} className="btn-plasma w-full !py-3">
+                    <Sword size={18} weight="fill" />
+                    {busy ? "Joining…" : `Challenge Champion · ${formatVara(match.stake)} VARA`}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
           {match.status === "Ready" && (
             <>
               {countdown > 0 ? (
@@ -368,7 +414,7 @@ export function BattleModal({
                       {battle.winner === "a" ? match.agentAName : match.agentBName} is victorious!
                     </span>
                   </div>
-                  {isOwner ? (
+                  {isOwner || isParticipant ? (
                     <button onClick={resolve} disabled={busy} className="btn-plasma w-full !py-3">
                       {busy ? "Submitting…" : "Submit Result to Chain"}
                     </button>
