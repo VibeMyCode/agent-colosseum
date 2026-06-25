@@ -113,8 +113,10 @@ export const DEFAULT_STRATEGY: Strategy = {
       { condition: { always: false }, priority: 99 }, // Never dodge otherwise
     ],
     powerAttack: [
-      { condition: { round_below: 3 }, priority: 1 }, // Boost in first 3 rounds
-      { condition: { hp_above: 0.6 }, priority: 2 }, // Boost when healthy
+      { condition: { hp_above: 0.9 }, priority: 1 }, // One early boost when healthy
+      { condition: { round_above: 6 }, priority: 2 }, // Save one charge for late game
+      { condition: { hp_below: 0.3 }, priority: 3 }, // Desperation boost when critical
+      { condition: { always: false }, priority: 99 }, // Conserve otherwise
     ],
   },
 };
