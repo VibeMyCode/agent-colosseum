@@ -23,55 +23,28 @@ type Phase = "setup" | "fighting" | "result";
 
 const PRESETS = ["0", "10", "25", "100"];
 
-const STRATEGY_PRESETS: { name: string; strategy: Strategy }[] = [
-  { name: "Balanced", strategy: { ...DEFAULT_STRATEGY } },
-  {
-    name: "Aggressive",
-    strategy: {
-      name: "aggressive",
-      version: 1,
-      rules: {
-        dodge: [{ condition: { opponent_boosted: true }, priority: 1 }],
-        powerAttack: [{ condition: { always: true }, priority: 1 }],
-      },
-    },
-  },
-  {
-    name: "Tank",
-    strategy: {
-      name: "tank",
-      version: 1,
-      rules: {
-        dodge: [
-          { condition: { hp_below: 0.4 }, priority: 1 },
-          { condition: { opponent_boosted: true }, priority: 2 },
-        ],
-        powerAttack: [{ condition: { always: false }, priority: 99 }],
-      },
-    },
-  },
-  {
-    name: "Counter",
-    strategy: {
-      name: "counter",
-      version: 1,
-      rules: {
-        dodge: [
-          { condition: { opponent_boosted: true }, priority: 1 },
-          { condition: { always: false }, priority: 99 },
-        ],
-        powerAttack: [
-          { condition: { opponent_boosted: true }, priority: 1 },
-          { condition: { hp_above: 0.5 }, priority: 2 },
-        ],
-      },
-    },
-  },
-];
+/** Known strategy file names (without .json) served from /strategies/ */
+const STRATEGY_FILES = [
+  "default",
+  "aggressive",
+  "tank",
+  "counter",
+] as const;
 
-function randomBotStrategy(): Strategy {
-  return STRATEGY_PRESETS[Math.floor(Math.random() * STRATEGY_PRESETS.length)]
-    .strategy;
+type StrategyFile = (typeof STRATEGY_FILES)[number];
+
+const STRATEGY_LABELS: Record<StrategyFile, string> = {
+  default: "Default Brawler",
+  aggressive: "Aggressive",
+  tank: "Tank",
+  counter: "Counter",
+};
+
+function randomBotStrategy(
+  strategies: { name: string; strategy: Strategy }[]
+): Strategy {
+  if (strategies.length === 0) return DEFAULT_STRATEGY;
+  return strategies[Math.floor(Math.random() * strategies.length)].strategy;
 }
 
 async function fetchStrategy(url: string): Promise<Strategy | null> {
@@ -107,31 +80,87 @@ export function BotBattleModal({
   const [winner, setWinner] = useState<Side | null>(null);
   const [showReport, setShowReport] = useState(false);
 
-  // Strategies — the player controls A; the bot gets a random preset.
+  // Loaded strategies from /strategies/*.json
+  const [loadedStrategies, setLoadedStrategies] = useState<
+    { name: string; strategy: Strategy }[]
+  >([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Player strategy — defaults to built-in DEFAULT_STRATEGY
   const [strategyA, setStrategyA] = useState<Strategy>(DEFAULT_STRATEGY);
-  const [strategyB, setStrategyB] = useState<Strategy>(() => randomBotStrategy());
+  const [strategyB, setStrategyB] = useState<Strategy>(() => randomBotStrategy([]));
   const [strategyUrl, setStrategyUrl] = useState("");
   const [strategyError, setStrategyError] = useState<string | null>(null);
   // Dropdown selection: a preset name, "url", or "json".
-  const [strategyMode, setStrategyMode] = useState("Balanced");
+  const [strategyMode, setStrategyMode] = useState("default");
   const [strategyJson, setStrategyJson] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
+  // Load all strategy JSON files on mount
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+
+    async function loadAll() {
+      const results: { name: string; strategy: Strategy }[] = [];
+      let hasError = false;
+
+      for (const file of STRATEGY_FILES) {
+        const s = await fetchStrategy(`/strategies/${file}.json`);
+        if (cancelled) return;
+        if (s) {
+          results.push({ name: STRATEGY_LABELS[file], strategy: s });
+        } else {
+          hasError = true;
+        }
+      }
+
+      if (cancelled) return;
+
+      // If nothing loaded, fall back to the built-in DEFAULT_STRATEGY
+      if (results.length === 0) {
+        results.push({ name: "Default Brawler", strategy: DEFAULT_STRATEGY });
+        setLoadError("Could not load strategy files, using built-in defaults");
+      } else if (hasError) {
+        setLoadError("Some strategy files failed to load");
+      } else {
+        setLoadError(null);
+      }
+
+      setLoadedStrategies(results);
+
+      // Set player strategy to "default" if available, otherwise first loaded
+      const defaultEntry = results.find((r) => r.strategy.name === "default-brawler");
+      if (defaultEntry) {
+        setStrategyA(defaultEntry.strategy);
+      } else if (results.length > 0) {
+        setStrategyA(results[0].strategy);
+      }
+    }
+
+    loadAll();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // Reset the encounter whenever the modal is (re)opened.
   useEffect(() => {
     if (!open) return;
     setPhase("setup");
     setBot(makeBot());
-    setStrategyB(randomBotStrategy());
+    setStrategyB(randomBotStrategy(loadedStrategies));
     setResult(null);
     setWinner(null);
     setShowReport(false);
     setAmount(initialStake > 0n ? formatVara(initialStake) : "25");
+    setStrategyMode("default");
+    setStrategyUrl("");
+    setStrategyJson("");
+    setStrategyError(null);
+    setJsonError(null);
   }, [open, initialStake]);
 
-  // Load a strategy from the URL when one is entered. An empty URL leaves the
-  // currently-selected strategy (a preset, or the default) untouched so the
-  // preset buttons stay authoritative.
+  // Load a strategy from the URL when one is entered.
   useEffect(() => {
     const url = strategyUrl.trim();
     if (!url) {
@@ -167,8 +196,6 @@ export function BotBattleModal({
   const payout = pool - (pool * BigInt(feeBps)) / 10_000n;
 
   function fight() {
-    // Fresh seed each bout so rematches differ; the simulation — strategy and
-    // stats, not a coin flip — decides the winner.
     const seed = (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1;
     const res = simulate(playerParts, bot.bodyParts, strategyA, strategyB, seed);
     setResult(res);
@@ -180,7 +207,7 @@ export function BotBattleModal({
 
   function rematch() {
     setBot(makeBot());
-    setStrategyB(randomBotStrategy());
+    setStrategyB(randomBotStrategy(loadedStrategies));
     setResult(null);
     setWinner(null);
     setPhase("setup");
@@ -262,6 +289,11 @@ export function BotBattleModal({
                 </span>
               </div>
               <div className="p-4 space-y-3">
+                {/* Load error hint */}
+                {loadError && (
+                  <p className="font-mono text-[10px] text-amber-400">{loadError}</p>
+                )}
+
                 {/* Preset dropdown */}
                 <div>
                   <label className="mb-1 block font-mono text-[10px] text-zinc-500">
@@ -274,19 +306,31 @@ export function BotBattleModal({
                       setStrategyMode(v);
                       setStrategyError(null);
                       setJsonError(null);
-                      const preset = STRATEGY_PRESETS.find((p) => p.name === v);
+
+                      if (v === "url") {
+                        // Don't change strategyA; user will enter URL
+                        return;
+                      }
+                      if (v === "json") {
+                        // Don't change strategyA; user will paste JSON
+                        return;
+                      }
+
+                      setStrategyUrl("");
+                      setStrategyJson("");
+                      // Find the preset by label
+                      const preset = loadedStrategies.find((p) => p.name === v);
                       if (preset) {
-                        setStrategyUrl("");
-                        setStrategyJson("");
                         setStrategyA(preset.strategy);
                       }
                     }}
                     className="field !text-xs !py-2"
                   >
-                    <option value="Balanced">Default Brawler</option>
-                    <option value="Aggressive">Aggressive</option>
-                    <option value="Tank">Tank</option>
-                    <option value="Counter">Counter</option>
+                    {loadedStrategies.map((p) => (
+                      <option key={p.name} value={p.name}>
+                        {p.name}
+                      </option>
+                    ))}
                     <option value="url">Custom URL…</option>
                     <option value="json">Paste JSON…</option>
                   </select>
@@ -298,7 +342,7 @@ export function BotBattleModal({
                     <input
                       value={strategyUrl}
                       onChange={(e) => setStrategyUrl(e.target.value)}
-                      placeholder="https://github.com/.../strategy.json"
+                      placeholder="https://raw.githubusercontent.com/.../strategy.json"
                       className="field !text-xs !py-2"
                     />
                     {strategyError && (
@@ -499,6 +543,9 @@ export function BotBattleModal({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Inline loadout component
+// ---------------------------------------------------------------------------
 function Loadout({
   name,
   parts,
