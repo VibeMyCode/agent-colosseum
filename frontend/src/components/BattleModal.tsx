@@ -6,7 +6,6 @@ import {
   Coins,
   ShieldCheck,
   Lightning,
-  Gavel,
   Robot,
   Play,
   ArrowsClockwise,
@@ -66,8 +65,8 @@ export function BattleModal({
   const { matches, agents, myActorId, config, refresh } = useColosseum();
   const { account } = useWallet();
   const { run, busy } = useTx();
-  const [winnerPick, setWinnerPick] = useState<"a" | "b">("a");
   const [watching, setWatching] = useState(false);
+  const [battleDone, setBattleDone] = useState(false);
   const [runKey, setRunKey] = useState(0);
   const [countdown, setCountdown] = useState(0);
   const [rematchCountdown, setRematchCountdown] = useState(0);
@@ -142,6 +141,15 @@ export function BattleModal({
     }
   }, [rematchCountdown, match?.status]);
 
+  // Auto-play battle animation when countdown expires
+  useEffect(() => {
+    if (countdown === 0 && match?.status === "Ready" && battle && !battleDone && !watching) {
+      setBattleDone(false);
+      setWatching(true);
+      setRunKey((k) => k + 1);
+    }
+  }, [countdown, match?.status, battle]);
+
   if (!match) {
     return <Modal open={open} onClose={onClose} title="Battle" children={null} />;
   }
@@ -181,14 +189,16 @@ export function BattleModal({
   }
 
   async function resolve() {
-    const winner = winnerPick === "a" ? match!.agentA : match!.agentB;
+    if (!battle || !match) return;
+    const winnerSide = battle.winner;
+    const winner = winnerSide === "a" ? match.agentA : match.agentB;
     if (!winner) return;
     const hash = await deriveStrategyHash(`${match!.id}:${winner}:${match!.seed}`);
     await run({
       pending: "Recording battle result…",
       success: "Result recorded",
       successMessage: () =>
-        `${winnerPick === "a" ? match!.agentAName : match!.agentBName} is victorious.`,
+        `${winnerSide === "a" ? match!.agentAName : match!.agentBName} is victorious.`,
       action: (sails, signArgs) =>
         setBattleResult(sails, signArgs, match!.id, winner, hash),
     });
@@ -211,10 +221,11 @@ export function BattleModal({
               b={{ name: match.agentBName || "Agent B", parts: bParts }}
               result={battle}
               runKey={runKey}
+              onDone={() => setBattleDone(true)}
             />
             <div className="flex justify-center gap-2">
               <button
-                onClick={() => setRunKey((k) => k + 1)}
+                onClick={() => { setRunKey((k) => k + 1); setBattleDone(false); }}
                 className="btn-ghost !px-3 !py-1.5 text-xs"
               >
                 <ArrowsClockwise size={14} weight="bold" /> Replay
@@ -338,25 +349,36 @@ export function BattleModal({
 
           {match.status === "Ready" && (
             <>
-              <Hint>Both fighters are locked in. The arena operator records the verified outcome.</Hint>
               {countdown > 0 ? (
                 <div className="flex items-center justify-center gap-2 rounded-xl border border-plasma-500/25 bg-plasma-500/[0.06] px-4 py-4">
                   <span className="font-display text-lg font-bold text-plasma-300">{countdown}</span>
-                  <span className="text-sm text-zinc-400">seconds until the arena can be resolved</span>
+                  <span className="text-sm text-zinc-400">seconds to battle</span>
+                  <Lightning size={16} weight="fill" className="text-plasma-400 animate-pulse" />
                 </div>
-              ) : isOwner ? (
-                <OperatorPanel
-                  match={match}
-                  winnerPick={winnerPick}
-                  setWinnerPick={setWinnerPick}
-                  onResolve={resolve}
-                  busy={busy}
-                />
-              ) : (
-                <Hint>
-                  Waiting for the arena operator to verify the outcome of this battle.
-                </Hint>
-              )}
+              ) : !battleDone ? (
+                <div className="flex items-center justify-center gap-2 rounded-xl border border-ember-500/25 bg-ember-500/[0.06] px-4 py-3">
+                  <Sword size={18} weight="fill" className="text-ember-400 animate-pulse" />
+                  <span className="text-sm text-zinc-300">Battle in progress…</span>
+                </div>
+              ) : battle ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-center gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-3">
+                    <Crown size={20} weight="fill" className="text-ember-400" />
+                    <span className="font-display text-base font-bold text-ember-200">
+                      {battle.winner === "a" ? match.agentAName : match.agentBName} is victorious!
+                    </span>
+                  </div>
+                  {isOwner ? (
+                    <button onClick={resolve} disabled={busy} className="btn-plasma w-full !py-3">
+                      {busy ? "Submitting…" : "Submit Result to Chain"}
+                    </button>
+                  ) : (
+                    <Hint>
+                      Waiting for the arena operator to record the outcome on-chain.
+                    </Hint>
+                  )}
+                </div>
+              ) : null}
             </>
           )}
 
@@ -503,56 +525,6 @@ function Timeline({ status }: { status: MatchStatus }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function OperatorPanel({
-  match,
-  winnerPick,
-  setWinnerPick,
-  onResolve,
-  busy,
-}: {
-  match: Match;
-  winnerPick: "a" | "b";
-  setWinnerPick: (v: "a" | "b") => void;
-  onResolve: () => void;
-  busy: boolean;
-}) {
-  return (
-    <div className="rounded-xl border border-plasma-500/25 bg-plasma-500/[0.06] p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Gavel size={15} weight="fill" className="text-plasma-300" />
-        <span className="font-display text-sm font-semibold text-plasma-200">
-          Operator · resolve battle
-        </span>
-        <span className="ml-auto text-[10px] uppercase tracking-wider text-zinc-600">
-          owner only
-        </span>
-      </div>
-      <div className="mb-3 grid grid-cols-2 gap-2">
-        {(["a", "b"] as const).map((side) => {
-          const label = side === "a" ? match.agentAName || "Agent A" : match.agentBName || "Agent B";
-          const active = winnerPick === side;
-          return (
-            <button
-              key={side}
-              onClick={() => setWinnerPick(side)}
-              className={`truncate rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                active
-                  ? "border-plasma-400/50 bg-plasma-500/15 text-plasma-100"
-                  : "border-white/8 text-zinc-400 hover:border-white/20"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-      <button onClick={onResolve} disabled={busy} className="btn-plasma w-full">
-        {busy ? "Recording…" : "Declare Winner"}
-      </button>
     </div>
   );
 }
