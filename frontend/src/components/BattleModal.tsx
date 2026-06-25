@@ -42,7 +42,7 @@ import {
 } from "@/lib/colosseum";
 
 const FALLBACK: BodyParts = { head_type: 0, body_type: 0, arms_type: 0, legs_type: 0 };
-const STEPS: MatchStatus[] = ["Waiting", "Ready", "Completed", "Closed"];
+const STEPS: MatchStatus[] = ["Waiting", "Ready", "Completed", "Claimed", "Closed"];
 
 function partsFor(agents: Agent[], id: string | null): BodyParts {
   if (!id) return FALLBACK;
