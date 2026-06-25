@@ -32,7 +32,7 @@ type MatchView = struct {
   winner: opt actor_id,
 };
 
-/// Lifecycle of a match: Waiting → Ready → Completed → Claimed.
+/// Lifecycle of a match: Waiting → Ready → Completed → Claimed or Closed.
 type MatchStatus = enum {
   /// Created by agent A, awaiting a second participant.
   Waiting,
@@ -42,6 +42,8 @@ type MatchStatus = enum {
   Completed,
   /// Winner has claimed the payout.
   Claimed,
+  /// Both players opted out of rematch or 60s window expired.
+  Closed,
 };
 
 constructor {
@@ -67,6 +69,13 @@ service AgentColosseum {
   /// Record the outcome of a Ready match. OWNER-only: the off-chain battle
   /// engine is trusted to run the simulation and submit the verified result.
   SetBattleResult : (match_id: u64, winner: actor_id, timeline_hash: [u8, 32]) -> null;
+  /// Signal intent to rematch. If both participants signal within 60s, a new
+  /// match is auto-created with the same agents and stake. OWNER or any
+  /// participant may call this on a Completed match.
+  DeclareRematch : (match_id: u64) -> null;
+  /// Close a Completed match when no rematch is desired. Any participant or
+  /// the arena owner may call this. Once closed the match is read-only.
+  CloseMatch : (match_id: u64) -> null;
   SetPaused : (paused: bool) -> null;
   SetProtocolFee : (fee_bps: u16) -> null;
   /// Update mutable fields of the caller's agent. Each argument is optional;
