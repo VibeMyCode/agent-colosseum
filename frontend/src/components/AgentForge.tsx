@@ -237,29 +237,28 @@ export function AgentForge() {
               {/* Form */}
               <div className="flex flex-col gap-5">
                 {/* Two-column: Callsign + input | Chassis + Budget, Randomize top right */}
-                <div className="grid gap-x-4 gap-y-0 sm:grid-cols-[1fr_1fr_auto]">
+                <div className="grid gap-x-4 gap-y-0 sm:grid-cols-[1fr_1fr]">
                   {/* Row 1 col 1 */}
                   <div>
                     <label className="mb-1.5 block font-mono text-xs text-zinc-500">
                       Callsign
                     </label>
                   </div>
-                  {/* Row 1 col 2 */}
-                  <div>
+                  {/* Row 1 col 2 — Chassis label + Randomize inline */}
+                  <div className="flex items-center justify-between">
                     <label className="mb-1.5 block font-mono text-xs text-zinc-500">
                       Chassis
                     </label>
+                    <button
+                      type="button"
+                      onClick={randomize}
+                      className="inline-flex items-center gap-1.5 text-xs text-zinc-400 transition-colors hover:text-ember-300"
+                    >
+                      <Shuffle size={13} weight="bold" /> Randomize
+                    </button>
                   </div>
-                  {/* Row 1 col 3 */}
-                  <button
-                    type="button"
-                    onClick={randomize}
-                    className="inline-flex items-center gap-1.5 self-start justify-self-end text-xs text-zinc-400 transition-colors hover:text-ember-300"
-                  >
-                    <Shuffle size={13} weight="bold" /> Randomize
-                  </button>
 
-                  {/* Row 2 col 1 */}
+                  {/* Row 2 col 1 — input */}
                   <div>
                     <input
                       value={name}
@@ -272,10 +271,10 @@ export function AgentForge() {
                       <span className="text-red-400">
                         {nameError && name.length > 0 ? nameError : ""}
                       </span>
-                      <span className="text-zinc-600">{name.length}/64</span>
+                      <span />
                     </div>
                   </div>
-                  {/* Row 2 col 2 */}
+                  {/* Row 2 col 2 — Budget bar full-width */}
                   <div className="w-full">
                     <div className="flex w-full items-center gap-1.5 rounded-lg border hairline bg-white/[0.02] px-3 py-2">
                       <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
