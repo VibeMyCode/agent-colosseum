@@ -29,9 +29,6 @@ export const BODY_HP = [80, 100, 120] as const;
 /** Legs → turn interval (ms between this fighter's attacks). Lower = faster. */
 export const LEGS_INTERVAL = [1500, 2500, 2000] as const;
 
-/** Legs → bonus ram damage applied on top of the weapon hit. */
-export const LEGS_RAM = [8, 15, 5] as const;
-
 /** Legs → number of speed-boost (power-attack) charges per battle. */
 export const LEGS_BOOST_CHARGES = [1, 2, 3] as const;
 
@@ -64,9 +61,8 @@ export type FighterStats = {
   boostMultiplier: number;
   /** ms between attacks. */
   intervalMs: number;
-  ramDamage: number;
   weaponDamage: number;
-  /** Damage of a single connecting hit (weapon + ram). */
+  /** Damage of a single connecting hit (weapon damage). */
   hitDamage: number;
   weapon: WeaponKind;
   gait: LegsGait;
@@ -79,7 +75,6 @@ export function deriveStats(parts: BodyParts): FighterStats {
   const arms = clampPart(parts.arms_type);
   const legs = clampPart(parts.legs_type);
 
-  const ramDamage = LEGS_RAM[legs];
   const weaponDamage = ARMS_DAMAGE[arms];
   return {
     maxHp: BODY_HP[body],
@@ -87,9 +82,8 @@ export function deriveStats(parts: BodyParts): FighterStats {
     boostCharges: LEGS_BOOST_CHARGES[legs],
     boostMultiplier: LEGS_BOOST_MULT[legs],
     intervalMs: LEGS_INTERVAL[legs],
-    ramDamage,
     weaponDamage,
-    hitDamage: weaponDamage + ramDamage,
+    hitDamage: weaponDamage,
     weapon: ARMS_WEAPON[arms],
     gait: LEGS_GAIT[legs],
     speedTier: LEGS_SPEED_TIER[legs],
@@ -123,7 +117,6 @@ export type Turn = {
   defender: Side;
   weapon: WeaponKind;
   gait: LegsGait;
-  ramDamage: number;
   weaponDamage: number;
   dodged: boolean;
   /** Was this a boosted (power) attack? */
@@ -295,7 +288,6 @@ export function simulate(
       defender: attacker === "a" ? "b" : "a",
       weapon: atkStats.weapon,
       gait: atkStats.gait,
-      ramDamage: atkStats.ramDamage,
       weaponDamage: atkStats.weaponDamage,
       dodged,
       powerAttack,
@@ -527,7 +519,6 @@ function simulateBiased(
       defender,
       weapon: atkStats.weapon,
       gait: atkStats.gait,
-      ramDamage: atkStats.ramDamage,
       weaponDamage: atkStats.weaponDamage,
       dodged,
       powerAttack,
