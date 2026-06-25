@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Sword,
   Crown,
-  Coins,
   ArrowsClockwise,
   Robot,
   CaretDown,
@@ -17,11 +16,9 @@ import {
   validateStrategy,
   type Strategy,
 } from "@/lib/strategy";
-import { formatVara, varaToUnits, type BodyParts } from "@/lib/colosseum";
+import { type BodyParts } from "@/lib/colosseum";
 
 type Phase = "setup" | "fighting" | "result";
-
-const PRESETS = ["0", "10", "25", "100"];
 
 /** Known strategy file names (without .json) served from /strategies/ */
 const STRATEGY_FILES = [
@@ -74,12 +71,12 @@ export function BotBattleModal({
 }) {
   const [phase, setPhase] = useState<Phase>("setup");
   const [bot, setBot] = useState<Bot>(() => makeBot());
-  const [amount, setAmount] = useState("25");
   const [runKey, setRunKey] = useState(0);
   const [result, setResult] = useState<BattleResult | null>(null);
   const [winner, setWinner] = useState<Side | null>(null);
   const [showReport, setShowReport] = useState(false);
-
+  void initialStake;
+  void feeBps;
   // Loaded strategies from /strategies/*.json
   const [loadedStrategies, setLoadedStrategies] = useState<
     { name: string; strategy: Strategy }[]
@@ -152,13 +149,12 @@ export function BotBattleModal({
     setResult(null);
     setWinner(null);
     setShowReport(false);
-    setAmount(initialStake > 0n ? formatVara(initialStake) : "25");
     setStrategyMode("default");
     setStrategyUrl("");
     setStrategyJson("");
     setStrategyError(null);
     setJsonError(null);
-  }, [open, initialStake]);
+  }, [open]);
 
   // Load a strategy from the URL when one is entered.
   useEffect(() => {
@@ -182,18 +178,6 @@ export function BotBattleModal({
       cancelled = true;
     };
   }, [strategyUrl]);
-
-  const units = useMemo(() => {
-    try {
-      return varaToUnits(amount);
-    } catch {
-      return 0n;
-    }
-  }, [amount]);
-
-  const forFun = units === 0n;
-  const pool = units * 2n;
-  const payout = pool - (pool * BigInt(feeBps)) / 10_000n;
 
   function fight() {
     const seed = (Math.floor(Math.random() * 0xffffffff) >>> 0) || 1;
@@ -247,187 +231,123 @@ export function BotBattleModal({
 
         {/* Phase content */}
         {phase === "setup" && (
-          <div className="space-y-5">
-            <div>
-              <label className="mb-2 block font-mono text-xs text-zinc-500">
-                Practice stake (VARA) ·{" "}
-                <span className="text-zinc-600">0 = just for fun</span>
-              </label>
-              <div className="relative">
-                <input
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))}
-                  inputMode="decimal"
-                  className="field !py-3 pr-16 font-display text-xl font-bold"
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 font-display text-sm text-zinc-500">
-                  VARA
-                </span>
-              </div>
-              <div className="mt-2 flex gap-1.5">
-                {PRESETS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => setAmount(p)}
-                    className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-medium transition-colors ${
-                      amount === p
-                        ? "border-ember-500/50 bg-ember-500/10 text-ember-200"
-                        : "border-white/8 text-zinc-400 hover:border-white/20"
-                    }`}
-                  >
-                    {p === "0" ? "Fun" : p}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Strategy — always visible */}
-            <div className="rounded-xl border hairline bg-white/[0.02]">
-              <div className="flex items-center gap-2 border-b hairline px-4 py-3">
-                <span className="font-mono text-xs font-semibold text-zinc-300">
-                  Bot Strategy ⚙️
-                </span>
-              </div>
-              <div className="p-4 space-y-3">
-                {/* Load error hint */}
-                {loadError && (
-                  <p className="font-mono text-[10px] text-amber-400">{loadError}</p>
-                )}
-
-                {/* Preset dropdown */}
-                <div>
-                  <label className="mb-1 block font-mono text-[10px] text-zinc-500">
-                    Choose a preset, or load your own
-                  </label>
-                  <select
-                    value={strategyMode}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setStrategyMode(v);
-                      setStrategyError(null);
-                      setJsonError(null);
-
-                      if (v === "url") {
-                        // Don't change strategyA; user will enter URL
-                        return;
-                      }
-                      if (v === "json") {
-                        // Don't change strategyA; user will paste JSON
-                        return;
-                      }
-
-                      setStrategyUrl("");
-                      setStrategyJson("");
-                      // Find the preset by label
-                      const preset = loadedStrategies.find((p) => p.name === v);
-                      if (preset) {
-                        setStrategyA(preset.strategy);
-                      }
-                    }}
-                    className="field !text-xs !py-2"
-                  >
-                    {loadedStrategies.map((p) => (
-                      <option key={p.name} value={p.name}>
-                        {p.name}
-                      </option>
-                    ))}
-                    <option value="url">Custom URL…</option>
-                    <option value="json">Paste JSON…</option>
-                  </select>
-                </div>
-
-                {/* Custom URL — only when selected */}
-                {strategyMode === "url" && (
-                  <div>
-                    <input
-                      value={strategyUrl}
-                      onChange={(e) => setStrategyUrl(e.target.value)}
-                      placeholder="https://raw.githubusercontent.com/.../strategy.json"
-                      className="field !text-xs !py-2"
-                    />
-                    {strategyError && (
-                      <p className="mt-1 font-mono text-[10px] text-red-400">
-                        {strategyError}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Paste JSON — only when selected */}
-                {strategyMode === "json" && (
-                  <div>
-                    <textarea
-                      value={strategyJson}
-                      onChange={(e) => {
-                        const text = e.target.value;
-                        setStrategyJson(text);
-                        if (!text.trim()) {
-                          setJsonError(null);
-                          return;
-                        }
-                        try {
-                          const parsed = JSON.parse(text);
-                          if (validateStrategy(parsed)) {
-                            setStrategyA(parsed);
-                            setJsonError(null);
-                          } else {
-                            setJsonError("Invalid strategy JSON");
-                          }
-                        } catch {
-                          setJsonError("Invalid strategy JSON");
-                        }
-                      }}
-                      rows={4}
-                      placeholder='{"name":"my-strat","version":1,"rules":{"dodge":[],"powerAttack":[]}}'
-                      className="field !text-xs !py-2 font-mono"
-                    />
-                    {jsonError && (
-                      <p className="mt-1 font-mono text-[10px] text-red-400">
-                        {jsonError}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Strategy preview */}
-                <div className="rounded-lg border hairline bg-black/20 p-3">
-                  <div className="font-mono text-[10px] text-zinc-400">
-                    {strategyA.name} v{strategyA.version}
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-[10px]">
-                    <div>
-                      <span className="text-cyan-400">Dodge:</span>
-                      {strategyA.rules.dodge.filter(
-                        (r) =>
-                          !("always" in r.condition && r.condition.always === false)
-                      ).length > 0
-                        ? " active"
-                        : " none"}
-                    </div>
-                    <div>
-                      <span className="text-ember-400">Boost:</span>{" "}
-                      {strategyA.rules.powerAttack.length} rule(s)
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-xl border hairline bg-white/[0.02] p-4 text-sm">
-              {forFun ? (
-                <p className="text-center text-zinc-400">
-                  No stake, no fee, no rewards — a friendly spar against{" "}
-                  <span className="text-ember-200">{bot.name}</span>. Winner is
-                  decided by your chassis stats and strategy.
-                </p>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">If you win (simulated)</span>
-                  <span className="font-display text-base font-bold text-gradient-ember">
-                    {formatVara(payout)} VARA
+            <div className="space-y-5">
+              {/* Strategy — always visible */}
+              <div className="rounded-xl border hairline bg-white/[0.02]">
+                <div className="flex items-center gap-2 border-b hairline px-4 py-3">
+                  <span className="font-mono text-xs font-semibold text-zinc-300">
+                    Bot Strategy ⚙️
                   </span>
                 </div>
-              )}
+                <div className="p-4 space-y-3">
+                  {/* Load error hint */}
+                  {loadError && (
+                    <p className="font-mono text-[10px] text-amber-400">{loadError}</p>
+                  )}
+
+                  {/* Preset dropdown */}
+                  <div>
+                    <label className="mb-1 block font-mono text-[10px] text-zinc-500">
+                      Choose a preset, or load your own
+                    </label>
+                    <select
+                      value={strategyMode}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setStrategyMode(v);
+                        setStrategyError(null);
+                        setJsonError(null);
+
+                        if (v === "url") {
+                          // Don't change strategyA; user will enter URL
+                          return;
+                        }
+                        if (v === "json") {
+                          // Don't change strategyA; user will paste JSON
+                          return;
+                        }
+
+                        setStrategyUrl("");
+                        setStrategyJson("");
+                        // Find the preset by label
+                        const preset = loadedStrategies.find((p) => p.name === v);
+                        if (preset) {
+                          setStrategyA(preset.strategy);
+                        }
+                      }}
+                      className="field !text-xs !py-2"
+                    >
+                      {loadedStrategies.map((p) => (
+                        <option key={p.name} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                      <option value="url">Custom URL…</option>
+                      <option value="json">Paste JSON…</option>
+                    </select>
+                  </div>
+
+                  {/* Custom URL — only when selected */}
+                  {strategyMode === "url" && (
+                    <div>
+                      <input
+                        value={strategyUrl}
+                        onChange={(e) => setStrategyUrl(e.target.value)}
+                        placeholder="https://raw.githubusercontent.com/.../strategy.json"
+                        className="field !text-xs !py-2"
+                      />
+                      {strategyError && (
+                        <p className="mt-1 font-mono text-[10px] text-red-400">
+                          {strategyError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Paste JSON — only when selected */}
+                  {strategyMode === "json" && (
+                    <div>
+                      <textarea
+                        value={strategyJson}
+                        onChange={(e) => {
+                          const text = e.target.value;
+                          setStrategyJson(text);
+                          if (!text.trim()) {
+                            setJsonError(null);
+                            return;
+                          }
+                          try {
+                            const parsed = JSON.parse(text);
+                            if (validateStrategy(parsed)) {
+                              setStrategyA(parsed);
+                              setJsonError(null);
+                            } else {
+                              setJsonError("Invalid strategy JSON");
+                            }
+                          } catch {
+                            setJsonError("Invalid strategy JSON");
+                          }
+                        }}
+                        rows={4}
+                        placeholder='{"name":"my-strat","version":1,"rules":{"dodge":[],"powerAttack":[]}}'
+                        className="field !text-xs !py-2 font-mono"
+                      />
+                      {jsonError && (
+                        <p className="mt-1 font-mono text-[10px] text-red-400">
+                          {jsonError}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            <div className="rounded-xl border hairline bg-white/[0.02] p-4 text-sm">
+              <p className="text-center text-zinc-400">
+                No stake, no fee, no rewards — a friendly spar against{" "}
+                <span className="text-ember-200">{bot.name}</span>. Winner is
+                decided by your chassis stats and strategy.
+              </p>
             </div>
 
             <button onClick={fight} className="btn-ember w-full !py-3">
@@ -454,15 +374,6 @@ export function BotBattleModal({
               <Crown size={18} weight="fill" className={youWon ? "text-ember-400" : "text-zinc-500"} />
               {youWon ? "Victory!" : `${bot.name} wins this spar`}
             </div>
-
-            {!forFun && (
-              <p className="flex items-center justify-center gap-1.5 text-center text-sm text-zinc-500">
-                <Coins size={14} weight="fill" className="text-ember-400/70" />
-                {youWon
-                  ? `You'd take ${formatVara(payout)} VARA in a real match.`
-                  : `You'd lose your ${formatVara(units)} VARA stake in a real match.`}
-              </p>
-            )}
 
             {/* Strategy report (collapsed by default to keep the arena large) */}
             {perf && (
