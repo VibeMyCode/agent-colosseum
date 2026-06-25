@@ -2,7 +2,7 @@
  * Compact readout of the combat stats a chassis resolves to. Shared by the
  * agent forge (loadout preview) and the bot-sparring setup screen.
  */
-import { Heart, Shield, Crosshair, Gauge } from "@phosphor-icons/react";
+import { Heart, Shield, Crosshair, Lightning } from "@phosphor-icons/react";
 import { deriveStats } from "@/lib/battle";
 import type { BodyParts } from "@/lib/colosseum";
 
@@ -38,7 +38,7 @@ export function StatPreview({
         value={`${s.hitDamage} dmg`}
       />
       <Chip
-        icon={<Gauge size={12} weight="fill" className="text-plasma-300" />}
+        icon={<Lightning size={12} weight="fill" className="text-amber-400" />}
         label="Boost"
         value={`${s.boostCharges}x ×${s.boostMultiplier.toFixed(1)}`}
       />

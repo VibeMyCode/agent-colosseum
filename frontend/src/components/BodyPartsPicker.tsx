@@ -77,9 +77,6 @@ export function BodyPartsPicker({ value, onChange }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <span className="font-display text-xs font-semibold uppercase tracking-widest text-zinc-500">
-          Chassis · each part sets a combat stat
-        </span>
         <button
           type="button"
           onClick={randomize}
@@ -95,7 +92,7 @@ export function BodyPartsPicker({ value, onChange }: Props) {
           Budget
         </span>
         <span className={`font-display text-sm font-bold ${budgetColor}`}>
-          {used}/{POINT_BUDGET}
+          {used} of {POINT_BUDGET} points used
           {used > POINT_BUDGET && (
             <span className="ml-1.5 font-mono text-[10px] font-normal text-red-400">
               · overspent

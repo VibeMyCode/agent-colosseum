@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Trophy,
   Coins,
-  Lightning,
+  Skull,
   Sparkle,
   CaretDown,
 } from "@phosphor-icons/react";
@@ -16,10 +16,8 @@ import { useTx } from "@/hooks/use-tx";
 import {
   deriveStrategyHash,
   formatVara,
-  hashToHex,
   isBudgetValid,
   registerAgent,
-  shortHex,
   updateAgent,
   type BodyParts,
 } from "@/lib/colosseum";
@@ -40,7 +38,7 @@ export function AgentForge() {
 
   const [open, setOpen] = useState(true);
   const [name, setName] = useState("");
-  const [strategyUrl, setStrategyUrl] = useState("");
+  const strategyUrl = "";
   const [parts, setParts] = useState<BodyParts>(DEFAULT_PARTS);
   const [strategyHash, setStrategyHash] = useState<number[]>([]);
 
@@ -132,7 +130,7 @@ export function AgentForge() {
               {myAgent.wins}W
             </span>
             <span className="inline-flex items-center gap-1">
-              <Lightning size={12} weight="fill" className="text-zinc-500" />
+              <Skull size={12} weight="fill" className="text-zinc-500" />
               {myAgent.losses}L
             </span>
           </span>
@@ -174,7 +172,7 @@ export function AgentForge() {
                 {isUpdate && myAgent && (
                   <div className="grid grid-cols-3 gap-2 text-center">
                     <Stat icon={<Trophy size={14} weight="fill" />} label="Wins" value={myAgent.wins} />
-                    <Stat icon={<Lightning size={14} weight="fill" />} label="Losses" value={myAgent.losses} />
+                    <Stat icon={<Skull size={14} weight="fill" />} label="Losses" value={myAgent.losses} />
                     <Stat
                       icon={<Coins size={14} weight="fill" />}
                       label="Earned"
@@ -205,22 +203,10 @@ export function AgentForge() {
                       <span className="text-zinc-600">{name.length}/64</span>
                     </div>
                   </div>
-
                   <div>
                     <label className="mb-1.5 block font-mono text-xs text-zinc-500">
-                      Strategy URL <span className="text-zinc-700">· optional</span>
+                      Chassis
                     </label>
-                    <input
-                      value={strategyUrl}
-                      onChange={(e) => setStrategyUrl(e.target.value)}
-                      placeholder="ipfs://… or https://…"
-                      className="field"
-                    />
-                    {strategyHash.length > 0 && (
-                      <p className="mt-1 font-mono text-[11px] text-zinc-600">
-                        hash {shortHex(hashToHex(strategyHash), 10, 8)}
-                      </p>
-                    )}
                   </div>
                 </div>
 

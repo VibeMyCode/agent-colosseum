@@ -21,7 +21,7 @@ export const ZERO_ACTOR =
 
 // Players have a fixed point budget to spend across their four body parts.
 // Each part variant costs 0 (weak), 1 (medium) or 2 (strong) points.
-export const POINT_BUDGET = 5;
+export const POINT_BUDGET = 4;
 
 // ---------------------------------------------------------------------------
 // Domain types
