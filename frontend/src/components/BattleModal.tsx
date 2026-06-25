@@ -32,6 +32,7 @@ import {
   joinMatch,
   sameActor,
   setBattleResult,
+  OWNER_ACTOR_ID,
   type Agent,
   type BodyParts,
   type Match,
@@ -66,6 +67,7 @@ export function BattleModal({
   const [winnerPick, setWinnerPick] = useState<"a" | "b">("a");
   const [watching, setWatching] = useState(false);
   const [runKey, setRunKey] = useState(0);
+  const [countdown, setCountdown] = useState(0);
 
   const match = useMemo(
     () => matches.find((m) => m.id === matchId) ?? null,
@@ -105,6 +107,22 @@ export function BattleModal({
   const isCreator = sameActor(myActorId, match.agentA);
   const isWinner = sameActor(myActorId, match.winner);
   const registered = Boolean(agents.find((a) => sameActor(a.agentId, myActorId)));
+  const isOwner = sameActor(myActorId, OWNER_ACTOR_ID);
+
+  // 10-second countdown after match becomes Ready before owner can resolve
+  useEffect(() => {
+    if (match.status === "Ready" && countdown === 0) {
+      setCountdown(10);
+    } else if (match.status !== "Ready") {
+      setCountdown(0);
+    }
+  }, [match.id, match.status]);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const t = setInterval(() => setCountdown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [countdown]);
 
   const feeBps = BigInt(config?.feeBps ?? 200);
   const pool = match.stake * 2n;
@@ -288,13 +306,24 @@ export function BattleModal({
           {match.status === "Ready" && (
             <>
               <Hint>Both fighters are locked in. The arena operator records the verified outcome.</Hint>
-              <OperatorPanel
-                match={match}
-                winnerPick={winnerPick}
-                setWinnerPick={setWinnerPick}
-                onResolve={resolve}
-                busy={busy}
-              />
+              {countdown > 0 ? (
+                <div className="flex items-center justify-center gap-2 rounded-xl border border-plasma-500/25 bg-plasma-500/[0.06] px-4 py-4">
+                  <span className="font-display text-lg font-bold text-plasma-300">{countdown}</span>
+                  <span className="text-sm text-zinc-400">seconds until the arena can be resolved</span>
+                </div>
+              ) : isOwner ? (
+                <OperatorPanel
+                  match={match}
+                  winnerPick={winnerPick}
+                  setWinnerPick={setWinnerPick}
+                  onResolve={resolve}
+                  busy={busy}
+                />
+              ) : (
+                <Hint>
+                  Waiting for the arena operator to verify the outcome of this battle.
+                </Hint>
+              )}
             </>
           )}
 

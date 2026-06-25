@@ -23,6 +23,9 @@ export const ZERO_ACTOR =
 // Each part variant costs 0 (weak), 1 (medium) or 2 (strong) points.
 export const POINT_BUDGET = 4;
 
+// Contract owner (agentvibe wallet) — the only account that can call SetBattleResult.
+export const OWNER_ACTOR_ID = "0xc037eebb1eb6af378ed4bb5ea46a4fc8258b4e4fbfa9e156f1a06870510dab7a";
+
 // ---------------------------------------------------------------------------
 // Domain types
 // ---------------------------------------------------------------------------
