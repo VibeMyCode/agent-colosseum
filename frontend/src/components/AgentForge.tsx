@@ -237,7 +237,7 @@ export function AgentForge() {
               {/* Form */}
               <div className="flex flex-col gap-5">
                 {/* Two-column: Callsign + input | Chassis + Budget, Randomize top right */}
-                <div className="grid gap-x-4 gap-y-0 sm:grid-cols-[1fr_auto_auto]">
+                <div className="grid gap-x-4 gap-y-0 sm:grid-cols-[1fr_1fr_auto]">
                   {/* Row 1 col 1 */}
                   <div>
                     <label className="mb-1.5 block font-mono text-xs text-zinc-500">
@@ -276,8 +276,8 @@ export function AgentForge() {
                     </div>
                   </div>
                   {/* Row 2 col 2 */}
-                  <div>
-                    <div className="flex items-center gap-1.5 rounded-lg border hairline bg-white/[0.02] px-3 py-2">
+                  <div className="w-full">
+                    <div className="flex w-full items-center gap-1.5 rounded-lg border hairline bg-white/[0.02] px-3 py-2">
                       <span className="font-mono text-[11px] uppercase tracking-wider text-zinc-500">
                         Budget
                       </span>
