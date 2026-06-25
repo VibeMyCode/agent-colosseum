@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   Trophy,
   Coins,
+  Shuffle,
   Skull,
   Sparkle,
   CaretDown,
@@ -19,7 +20,11 @@ import {
   isBudgetValid,
   registerAgent,
   updateAgent,
+  totalCost,
+  POINT_BUDGET,
+  PART_DEFS,
   type BodyParts,
+  type PartKey,
 } from "@/lib/colosseum";
 
 const DEFAULT_PARTS: BodyParts = {
@@ -76,6 +81,61 @@ export function AgentForge() {
 
   const canSubmit =
     ready && Boolean(account) && !nameError && !busy && isBudgetValid(parts);
+
+  const used = totalCost(parts);
+
+  const budgetColor =
+    used > POINT_BUDGET
+      ? "text-red-400"
+      : used === POINT_BUDGET
+        ? "text-emerald-400"
+        : "text-ember-300";
+
+  const PART_KEYS: PartKey[] = PART_DEFS.map((d) => d.key);
+
+  function partCost(key: PartKey, level: number): number {
+    const def = PART_DEFS.find((d) => d.key === key)!;
+    return def.variants[level].cost;
+  }
+
+  function randomize() {
+    const randomized: BodyParts = {
+      head_type: Math.floor(Math.random() * 3),
+      body_type: Math.floor(Math.random() * 3),
+      arms_type: Math.floor(Math.random() * 3),
+      legs_type: Math.floor(Math.random() * 3),
+    };
+
+    // Over budget → repeatedly downgrade the highest-cost part.
+    while (totalCost(randomized) > POINT_BUDGET) {
+      let best: PartKey | null = null;
+      let bestCost = -1;
+      for (const key of PART_KEYS) {
+        if (randomized[key] <= 0) continue;
+        const c = partCost(key, randomized[key]);
+        if (c > bestCost) {
+          bestCost = c;
+          best = key;
+        }
+      }
+      if (best === null) break;
+      randomized[best] -= 1;
+    }
+
+    // Under budget → upgrade random sub-max parts until the budget is met.
+    while (totalCost(randomized) < POINT_BUDGET) {
+      const upgradable = PART_KEYS.filter((key) => randomized[key] < 2);
+      if (upgradable.length === 0) break;
+      const key = upgradable[Math.floor(Math.random() * upgradable.length)];
+      randomized[key] += 1;
+      if (totalCost(randomized) > POINT_BUDGET) {
+        randomized[key] -= 1;
+        break;
+      }
+    }
+
+    setParts(randomized);
+  }
 
   async function submit() {
     if (!canSubmit) return;
@@ -184,8 +244,10 @@ export function AgentForge() {
 
               {/* Form */}
               <div className="flex flex-col gap-5">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div>
+                {/* Callsign + Budget + Randomize on one row */}
+                <div className="flex flex-wrap items-start gap-3 sm:flex-nowrap sm:items-center">
+                  {/* Callsign — flex grow */}
+                  <div className="min-w-0 flex-1">
                     <label className="mb-1.5 block font-mono text-xs text-zinc-500">
                       Callsign
                     </label>
@@ -203,14 +265,39 @@ export function AgentForge() {
                       <span className="text-zinc-600">{name.length}/64</span>
                     </div>
                   </div>
-                  <div>
-                    <label className="mb-1.5 block font-mono text-xs text-zinc-500">
-                      Chassis
+
+                  {/* Budget */}
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <label className="block font-mono text-xs text-zinc-500">
+                      Budget
                     </label>
+                    <span className={`font-display text-sm font-bold ${budgetColor} whitespace-nowrap`}>
+                      {used} of {POINT_BUDGET} points used
+                      {used > POINT_BUDGET && (
+                        <span className="ml-1.5 font-mono text-[10px] font-normal text-red-400">
+                          · overspent
+                        </span>
+                      )}
+                    </span>
                   </div>
+
+                  {/* Randomize — right-aligned */}
+                  <button
+                    type="button"
+                    onClick={randomize}
+                    className="inline-flex items-center gap-1.5 self-end pb-[5px] text-xs text-zinc-400 transition-colors hover:text-ember-300 sm:self-center"
+                  >
+                    <Shuffle size={13} weight="bold" /> Randomize
+                  </button>
                 </div>
 
-                <BodyPartsPicker value={parts} onChange={setParts} />
+                {/* Chassis header + parts picker */}
+                <div>
+                  <label className="mb-3 block font-mono text-xs text-zinc-500">
+                    Chassis
+                  </label>
+                  <BodyPartsPicker value={parts} onChange={setParts} />
+                </div>
 
                 <button onClick={submit} disabled={!canSubmit} className="btn-ember w-full sm:w-auto sm:self-end sm:!px-8">
                   {busy
