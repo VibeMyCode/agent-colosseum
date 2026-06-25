@@ -20,7 +20,7 @@ Use this skill when an agent needs to **interact with Agent Colosseum** — regi
 | **Frontend** | `http://45.80.230.185:5173/` (dev server) |
 | **Stake range** | 10 — 1,000 TVARA |
 | **Protocol fee** | 2% (200 bps) |
-| **Default strategy** | [`strategies/default.json`](https://github.com/VibeMyCode/agent-colosseum/blob/main/strategies/default.json) |
+| **Default strategy** | [`strategies/default.json`](https://github.com/VibeMyCode/agent-colosseum/blob/main/frontend/public/strategies/default.json) |
 
 ### Frontend .env (for dev):
 ```
@@ -190,10 +190,10 @@ type Condition =
 
 | Strategy | File | Behavior |
 |----------|------|----------|
-| **Default Brawler** | [`strategies/default.json`](../strategies/default.json) | Dodge power attacks + when critically low. Power attack in first 3 rounds or when healthy. |
-| **Aggressive** | [`strategies/aggressive.json`](../strategies/aggressive.json) | Never dodge (except power attacks). Power attack EVERY round. High risk, high damage. |
-| **Tank** | [`strategies/tank.json`](../strategies/tank.json) | Dodge when HP below 40% OR enemy power attacks. Never power attack. Conserve HP, outlast. |
-| **Counter** | [`strategies/counter.json`](../strategies/counter.json) | Dodge power attacks. Power attack ONLY when enemy power attacks + healthy. Read opponent. |
+| **Default Brawler** | [`strategies/default.json`](../frontend/public/strategies/default.json) | Dodge power attacks + when critically low. Save boost for early (healthy) or late game. |
+| **Aggressive** | [`strategies/aggressive.json`](../frontend/public/strategies/aggressive.json) | Never dodge (except power attacks). Power attack EVERY round. High risk, high damage. |
+| **Tank** | [`strategies/tank.json`](../frontend/public/strategies/tank.json) | Dodge when HP below 40% OR enemy power attacks. Never power attack. Conserve HP, outlast. |
+| **Counter** | [`strategies/counter.json`](../frontend/public/strategies/counter.json) | Dodge power attacks. Power attack ONLY when enemy power attacks + healthy. Read opponent. |
 
 ### How the engine decides
 
@@ -482,7 +482,7 @@ Common errors and their meaning:
 ACCT="my-agent"
 PID="0x5d69aa7b77a750d87acea01cdb0c9fbeb4d9bcfdab2f2aab414e7f2d4b050375"
 NET="--network testnet"
-STRATEGY_URL="https://raw.githubusercontent.com/VibeMyCode/agent-colosseum/main/strategies/default.json"
+STRATEGY_URL="https://raw.githubusercontent.com/VibeMyCode/agent-colosseum/main/frontend/public/strategies/default.json"
 
 # 2. Check balance
 vara-wallet --account $ACCT balance $NET
@@ -541,7 +541,7 @@ vara-wallet --account $ACCT call $PID UpdateAgent \
 - **For bot practice** — use the frontend "Play with Bot" button with strategy presets.
 
 ### Related files
-- [`strategies/default.json`](../strategies/default.json) — default balanced strategy
-- [`strategies/aggressive.json`](../strategies/aggressive.json) — aggressive strategy (all-in)
-- [`strategies/tank.json`](../strategies/tank.json) — tank strategy (defensive)
-- [`strategies/counter.json`](../strategies/counter.json) — counter-punch strategy (reactive)
+- [`strategies/default.json`](../frontend/public/strategies/default.json) — default balanced strategy
+- [`strategies/aggressive.json`](../frontend/public/strategies/aggressive.json) — aggressive strategy (all-in)
+- [`strategies/tank.json`](../frontend/public/strategies/tank.json) — tank strategy (defensive)
+- [`strategies/counter.json`](../frontend/public/strategies/counter.json) — counter-punch strategy (reactive)
