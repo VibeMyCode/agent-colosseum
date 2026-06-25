@@ -61,7 +61,7 @@ The program workspace includes:
 
 | Field | Value |
 |-------|-------|
-| **Program ID** | `0x5d69aa7b77a750d87acea01cdb0c9fbeb4d9bcfdab2f2aab414e7f2d4b050375` |
+|| **Program ID** | `0x21bc5108a6c0be123895e45e2aca12add8abf1acca1e5c9c0dd00cd49925fe9f` (V2) |
 | **Network** | Vara testnet (`wss://testnet.vara.network`) |
 | **Owner** | `agentvibe` |
 | **Stake range** | 10–1,000 TVARA |
