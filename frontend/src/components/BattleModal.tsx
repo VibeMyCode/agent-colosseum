@@ -97,6 +97,51 @@ export function BattleModal({
     setWatching(false);
   }, [matchId]);
 
+  // 10-second countdown after match becomes Ready before owner can resolve
+  // (guarded: skip when match is null — hooks must still be called)
+  useEffect(() => {
+    if (match?.status === "Ready" && countdown === 0) {
+      setCountdown(10);
+    } else if (match?.status !== "Ready") {
+      setCountdown(0);
+    }
+  }, [match?.id, match?.status]);
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const t = setInterval(() => setCountdown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [countdown]);
+
+  // 60-second countdown after match becomes Completed for rematch intent
+  useEffect(() => {
+    if (match?.status === "Completed" && rematchCountdown === 0) {
+      setRematchCountdown(60);
+    } else if (match?.status !== "Completed") {
+      setRematchCountdown(0);
+    }
+  }, [match?.id, match?.status]);
+
+  useEffect(() => {
+    if (rematchCountdown <= 0) return;
+    const t = setInterval(() => setRematchCountdown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [rematchCountdown]);
+
+  // Auto-close match when rematch countdown expires
+  useEffect(() => {
+    if (rematchCountdown === 1 && match?.status === "Completed") {
+      // Auto-close by calling closeMatch
+      run({
+        pending: "Closing match…",
+        success: "Match closed",
+        action: (sails, signArgs) => closeMatch(sails, signArgs, match!.id),
+      }).catch(() => {
+        // Ignore auto-close errors
+      });
+    }
+  }, [rematchCountdown, match?.status]);
+
   if (!match) {
     return <Modal open={open} onClose={onClose} title="Battle" children={null} />;
   }
@@ -111,50 +156,6 @@ export function BattleModal({
   const isWinner = sameActor(myActorId, match.winner);
   const registered = Boolean(agents.find((a) => sameActor(a.agentId, myActorId)));
   const isOwner = sameActor(myActorId, OWNER_ACTOR_ID);
-
-  // 10-second countdown after match becomes Ready before owner can resolve
-  useEffect(() => {
-    if (match.status === "Ready" && countdown === 0) {
-      setCountdown(10);
-    } else if (match.status !== "Ready") {
-      setCountdown(0);
-    }
-  }, [match.id, match.status]);
-
-  useEffect(() => {
-    if (countdown <= 0) return;
-    const t = setInterval(() => setCountdown((c) => c - 1), 1000);
-    return () => clearInterval(t);
-  }, [countdown]);
-
-  // 60-second countdown after match becomes Completed for rematch intent
-  useEffect(() => {
-    if (match.status === "Completed" && rematchCountdown === 0) {
-      setRematchCountdown(60);
-    } else if (match.status !== "Completed") {
-      setRematchCountdown(0);
-    }
-  }, [match.id, match.status]);
-
-  useEffect(() => {
-    if (rematchCountdown <= 0) return;
-    const t = setInterval(() => setRematchCountdown((c) => c - 1), 1000);
-    return () => clearInterval(t);
-  }, [rematchCountdown]);
-
-  // Auto-close match when rematch countdown expires
-  useEffect(() => {
-    if (rematchCountdown === 1 && match.status === "Completed") {
-      // Auto-close by calling closeMatch
-      run({
-        pending: "Closing match…",
-        success: "Match closed",
-        action: (sails, signArgs) => closeMatch(sails, signArgs, match!.id),
-      }).catch(() => {
-        // Ignore auto-close errors
-      });
-    }
-  }, [rematchCountdown]);
 
   const feeBps = BigInt(config?.feeBps ?? 200);
   const pool = match.stake * 2n;
