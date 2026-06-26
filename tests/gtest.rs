@@ -1113,3 +1113,177 @@ async fn new_champion_gets_old_bank() {
     let expected_bank = bank_after_1 + net_stake;
     assert_eq!(m.bank, expected_bank);
 }
+
+/// Decision phase: both participants opt to fight again → the same match re-arms
+/// to Ready with the champion (and bank) preserved.
+#[tokio::test]
+async fn fight_again_both_rearm() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    // Alice wins → champion, Bob is the challenger/loser in the decision phase.
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    let bank = m.bank;
+    assert_eq!(m.status, MatchStatus::Waiting);
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+
+    // Champion (Alice) opts to fight again — bankrolled, no value needed.
+    service
+        .fight_again(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    // Not re-armed yet — only one side opted in.
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Waiting);
+
+    // Challenger (Bob) opts to fight again — re-stakes from wallet.
+    service
+        .fight_again(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+
+    // Both agreed → match re-armed to Ready, champion + bank preserved.
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Ready);
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+    assert_eq!(m.bank, bank);
+    assert_eq!(m.winner, None);
+}
+
+/// Decision phase: both participants exit → the match is Closed.
+#[tokio::test]
+async fn both_exit_closes_match() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    // Loser (Bob) exits → match stays Waiting with champion Alice.
+    service
+        .exit_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Waiting);
+    assert_eq!(m.champion, Some(AGENT_A.into()));
+    assert_eq!(m.agent_b, None);
+
+    // Champion (Alice) also exits → both gone → Closed.
+    service
+        .exit_match(match_id)
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    let m = service.get_match(match_id).await.unwrap().unwrap();
+    assert_eq!(m.status, MatchStatus::Closed);
+    assert_eq!(m.champion, None);
+    assert_eq!(m.bank, 0);
+}
+
+/// fight_again is only callable by the two decision-phase participants.
+#[tokio::test]
+async fn fight_again_non_participant_fails() {
+    let program = setup().await;
+    let mut service = program.agent_colosseum();
+
+    service
+        .register_agent("Alice".into(), body_parts(), [1u8; 32], "ipfs://a".into())
+        .with_actor_id(AGENT_A.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Bob".into(), body_parts(), [2u8; 32], "ipfs://b".into())
+        .with_actor_id(AGENT_B.into())
+        .await
+        .unwrap();
+    service
+        .register_agent("Charlie".into(), body_parts(), [3u8; 32], "ipfs://c".into())
+        .with_actor_id(AGENT_C.into())
+        .await
+        .unwrap();
+
+    let match_id = service
+        .create_match(STAKE)
+        .with_actor_id(AGENT_A.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .join_match(match_id)
+        .with_actor_id(AGENT_B.into())
+        .with_value(STAKE)
+        .await
+        .unwrap();
+    service
+        .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
+        .with_actor_id(OWNER.into())
+        .await
+        .unwrap();
+
+    let res = service
+        .fight_again(match_id)
+        .with_actor_id(AGENT_C.into())
+        .with_value(STAKE)
+        .await;
+    assert!(res.is_err(), "non-participant should not fight again");
+}

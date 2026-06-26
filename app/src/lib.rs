@@ -187,6 +187,12 @@ static mut PROTOCOL_FEE_BPS: u16 = DEFAULT_FEE_BPS;
 static mut PAUSED: bool = false;
 static mut OWNER: ActorId = ActorId::zero();
 static mut REMATCH_INTENTS: Vec<(u64, ActorId)> = Vec::new();
+/// Decision-phase "fight again" intents: a re-arm happens once BOTH the champion
+/// and the current challenger of a match have opted in.
+static mut FIGHT_AGAIN: Vec<(u64, ActorId)> = Vec::new();
+/// Decision-phase "exit" intents: one exit drops the leaver and keeps the arena
+/// open with its champion; both participants exiting closes the match.
+static mut EXITED: Vec<(u64, ActorId)> = Vec::new();
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -461,6 +467,9 @@ impl AgentColosseum {
             if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &operator) {
                 config.total_staked += stake;
             }
+            // A fresh challenger opens a fresh decision phase.
+            FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+            EXITED.retain(|(id, _)| id != &match_id);
         }
         self.emit_event(Event::MatchJoined {
             match_id,
@@ -505,8 +514,17 @@ impl AgentColosseum {
                     // Winner becomes the new champion
                     m.champion = Some(winner);
 
-                    // Status goes back to Waiting with the new champion
+                    // Normalize the slots so the champion always occupies agent_a
+                    // and the (just-beaten) challenger occupies agent_b. The whole
+                    // decision-phase / join flow relies on this invariant.
+                    m.agent_a = winner;
+                    m.agent_b = loser;
+
+                    // Status goes back to Waiting with the new champion, opening a
+                    // fresh decision phase (clear any stale intents).
                     m.status = MatchStatus::Waiting;
+                    FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                    EXITED.retain(|(id, _)| id != &match_id);
 
                     if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &winner) {
                         config.wins += 1;
@@ -607,34 +625,71 @@ impl AgentColosseum {
         bank
     }
 
-    /// Exit a match. Any participant may call this.
-    /// If the champion exits, their bank is cleared and champion is set to None.
-    /// Match status returns to Waiting if it was in Ready; otherwise stays in current state.
+    /// Exit a match during the decision phase (or a Ready bout).
+    ///
+    /// Decision-phase rules:
+    /// * One participant exits → the match stays Waiting with its champion (and
+    ///   bank) intact, the leaver's slot is freed so a new challenger can join.
+    /// * Both participants exit → the match is Closed.
+    /// * A champion stepping down alone clears the champion/bank and leaves the
+    ///   remaining player in an open Waiting match.
     #[export]
     pub fn exit_match(&mut self, match_id: u64) {
         let caller = msg::source();
         unsafe {
-            let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
-            match entry {
-                Some((_, m)) => {
-                    if caller != m.agent_a && caller != m.agent_b {
-                        panic!("NotParticipant");
-                    }
-                    if caller == m.champion.unwrap_or(ActorId::zero()) {
-                        // Champion is exiting
-                        m.champion = None;
-                        m.bank = 0;
-                        if matches!(m.status, MatchStatus::Ready) {
-                            m.status = MatchStatus::Waiting;
+            // Validate participation and snapshot the slots/champion.
+            let (agent_a, agent_b, champion) = {
+                let entry = MATCHES.iter().find(|(id, _)| id == &match_id);
+                match entry {
+                    Some((_, m)) => {
+                        if caller != m.agent_a && caller != m.agent_b {
+                            panic!("NotParticipant");
                         }
-                    } else {
-                        // Non-champion exits
-                        if matches!(m.status, MatchStatus::Ready) {
-                            m.status = MatchStatus::Waiting;
+                        if !matches!(m.status, MatchStatus::Waiting | MatchStatus::Ready) {
+                            panic!("InvalidMatchStatus");
                         }
+                        (m.agent_a, m.agent_b, m.champion)
                     }
+                    None => panic!("MatchNotFound"),
                 }
-                None => panic!("MatchNotFound"),
+            };
+
+            // Record the exit intent (dedupe).
+            if !EXITED.iter().any(|(id, a)| id == &match_id && a == &caller) {
+                EXITED.push((match_id, caller));
+            }
+            let exit_count = EXITED.iter().filter(|(id, _)| id == &match_id).count();
+
+            if let Some((_, m)) = MATCHES.iter_mut().find(|(id, _)| id == &match_id) {
+                if exit_count >= 2 {
+                    // Both participants bailed → close the match.
+                    m.status = MatchStatus::Closed;
+                    m.champion = None;
+                    m.bank = 0;
+                    EXITED.retain(|(id, _)| id != &match_id);
+                    FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                } else if Some(caller) == champion {
+                    // Champion alone steps down: arena loses its champion and bank,
+                    // the remaining player stays in an open Waiting match.
+                    let other = if caller == agent_a { agent_b } else { agent_a };
+                    m.agent_a = other;
+                    m.agent_b = ActorId::zero();
+                    m.champion = None;
+                    m.bank = 0;
+                    m.winner = None;
+                    m.status = MatchStatus::Waiting;
+                    FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                } else {
+                    // Challenger/loser leaves; the champion keeps their seat and
+                    // bank. Free the challenger slot for a new challenger.
+                    if caller == agent_a {
+                        m.agent_a = agent_b;
+                    }
+                    m.agent_b = ActorId::zero();
+                    m.winner = None;
+                    m.status = MatchStatus::Waiting;
+                    FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                }
             }
         }
         self.emit_event(Event::MatchExited {
@@ -642,6 +697,83 @@ impl AgentColosseum {
             participant: caller,
         })
         .expect("failed to emit MatchExited");
+    }
+
+    /// Decision-phase mutual rematch. The champion keeps their seat (bankrolled
+    /// from the accumulated bank) while the current challenger re-stakes from
+    /// their wallet. Once BOTH the champion and the challenger have opted in, the
+    /// match re-arms to Ready with a fresh seed for another bout — no new match,
+    /// the bank carries over.
+    #[export]
+    pub fn fight_again(&mut self, match_id: u64) {
+        let caller = msg::source();
+        let value = msg::value();
+        let mut rearmed_challenger: Option<ActorId> = None;
+        unsafe {
+            let (agent_a, agent_b, stake) = {
+                let entry = MATCHES.iter().find(|(id, _)| id == &match_id);
+                match entry {
+                    Some((_, m)) => {
+                        if !matches!(m.status, MatchStatus::Waiting) {
+                            panic!("MatchNotWaiting");
+                        }
+                        let champ = match m.champion {
+                            Some(c) => c,
+                            None => panic!("NoChampion"),
+                        };
+                        if caller != m.agent_a && caller != m.agent_b {
+                            panic!("NotParticipant");
+                        }
+                        if m.agent_a == ActorId::zero() || m.agent_b == ActorId::zero() {
+                            panic!("OpponentLeft");
+                        }
+                        // The challenger re-stakes from their wallet; the champion
+                        // is bankrolled by the accumulated bank.
+                        if caller != champ && value < m.stake {
+                            panic!("InsufficientValue");
+                        }
+                        (m.agent_a, m.agent_b, m.stake)
+                    }
+                    None => panic!("MatchNotFound"),
+                }
+            };
+
+            if FIGHT_AGAIN
+                .iter()
+                .any(|(id, a)| id == &match_id && a == &caller)
+            {
+                panic!("AlreadyDeclaredFightAgain");
+            }
+            FIGHT_AGAIN.push((match_id, caller));
+
+            if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &caller) {
+                config.total_staked += stake;
+            }
+
+            // Re-arm once both present participants have opted in.
+            let a_in = FIGHT_AGAIN
+                .iter()
+                .any(|(id, x)| id == &match_id && x == &agent_a);
+            let b_in = FIGHT_AGAIN
+                .iter()
+                .any(|(id, x)| id == &match_id && x == &agent_b);
+            if a_in && b_in {
+                let now = exec::block_timestamp();
+                if let Some((_, m)) = MATCHES.iter_mut().find(|(id, _)| id == &match_id) {
+                    m.status = MatchStatus::Ready;
+                    m.seed = now;
+                    m.winner = None;
+                    m.timeline_hash = None;
+                    rearmed_challenger = Some(m.agent_b);
+                }
+                FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                EXITED.retain(|(id, _)| id != &match_id);
+            }
+        }
+        if let Some(agent_b) = rearmed_challenger {
+            self.emit_event(Event::MatchJoined { match_id, agent_b })
+                .expect("failed to emit MatchJoined");
+        }
     }
 
     /// Declare intent to rematch. Both participants must call within 60s of Completed status
@@ -830,6 +962,8 @@ impl Program {
             PROTOCOL_FEE_BPS = DEFAULT_FEE_BPS;
             PAUSED = false;
             REMATCH_INTENTS = Vec::new();
+            FIGHT_AGAIN = Vec::new();
+            EXITED = Vec::new();
         }
         Self(())
     }

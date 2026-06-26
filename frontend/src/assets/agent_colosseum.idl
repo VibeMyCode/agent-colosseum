@@ -30,6 +30,8 @@ type MatchView = struct {
   status: MatchStatus,
   seed: u64,
   winner: opt actor_id,
+  champion: opt actor_id,
+  bank: u128,
 };
 
 /// Lifecycle of a match: Waiting → Ready → Completed → Claimed or Closed.
@@ -42,7 +44,7 @@ type MatchStatus = enum {
   Completed,
   /// Winner has claimed the payout.
   Claimed,
-  /// Both players opted out of rematch or 60s window expired.
+  /// Match closed; view-only.
   Closed,
 };
 
@@ -53,29 +55,48 @@ constructor {
 };
 
 service AgentColosseum {
+  /// Champion claims accumulated bank, closing the match.
+  /// Only the champion may call this function.
+  ClaimBank : (match_id: u64) -> u128;
   /// Claim winnings for a Completed match. Only the recorded winner may claim.
   /// 
   /// v1: records the payout against the winner's lifetime earnings and returns
   /// a status string. The actual VARA transfer is deferred to v2.
   ClaimWinnings : (match_id: u64) -> str;
+  /// Close a match. Only callable by match participants or contract owner.
+  /// Match must be in Ready, Waiting, or Completed status.
+  CloseMatch : (match_id: u64) -> null;
   /// Create a match as agent A, staking `stake` (must be covered by attached
   /// value). Returns the new match id.
   CreateMatch : (stake: u128) -> u64;
-  /// Join a waiting match as agent B, matching the stake with attached value.
+  /// Declare intent to rematch. Both participants must call within 60s of Completed status
+  /// to auto-create a new match with the same stake. Only callable by match participants.
+  DeclareRematch : (match_id: u64) -> null;
+  /// Exit a match during the decision phase (or a Ready bout).
+  /// 
+  /// Decision-phase rules:
+  /// * One participant exits → the match stays Waiting with its champion (and
+  ///   bank) intact, the leaver's slot is freed so a new challenger can join.
+  /// * Both participants exit → the match is Closed.
+  /// * A champion stepping down alone clears the champion/bank and leaves the
+  ///   remaining player in an open Waiting match.
+  ExitMatch : (match_id: u64) -> null;
+  /// Decision-phase mutual rematch. The champion keeps their seat (bankrolled
+  /// from the accumulated bank) while the current challenger re-stakes from
+  /// their wallet. Once BOTH the champion and the challenger have opted in, the
+  /// match re-arms to Ready with a fresh seed for another bout — no new match,
+  /// the bank carries over.
+  FightAgain : (match_id: u64) -> null;
+  /// Join a waiting match. If no champion exists, joiner joins as agent B in a normal match.
+  /// If a champion exists, joiner becomes the challenger against the champion.
   JoinMatch : (match_id: u64) -> null;
   /// Register the caller as an agent. One agent per account; the agent id is
   /// the caller's `ActorId`. `body_parts` are cosmetic-only.
   RegisterAgent : (name: str, body_parts: BodyParts, strategy_hash: [u8, 32], strategy_url: str) -> actor_id;
   /// Record the outcome of a Ready match. The owner or either match
   /// participant (agent A or B) may submit the verified result.
+  /// Winner becomes the champion; match status returns to Waiting with accumulated bank.
   SetBattleResult : (match_id: u64, winner: actor_id, timeline_hash: [u8, 32]) -> null;
-  /// Signal intent to rematch. If both participants signal within 60s, a new
-  /// match is auto-created with the same agents and stake. OWNER or any
-  /// participant may call this on a Completed match.
-  DeclareRematch : (match_id: u64) -> null;
-  /// Close a Completed match when no rematch is desired. Any participant or
-  /// the arena owner may call this. Once closed the match is read-only.
-  CloseMatch : (match_id: u64) -> null;
   SetPaused : (paused: bool) -> null;
   SetProtocolFee : (fee_bps: u16) -> null;
   /// Update mutable fields of the caller's agent. Each argument is optional;
@@ -116,6 +137,17 @@ service AgentColosseum {
       match_id: u64,
       winner: actor_id,
       payout: u128,
+    };
+    /// Champion claimed their accumulated bank, closing the match.
+    BankClaimed: struct {
+      match_id: u64,
+      champion: actor_id,
+      bank: u128,
+    };
+    /// A participant exited the match.
+    MatchExited: struct {
+      match_id: u64,
+      participant: actor_id,
     };
   }
 };

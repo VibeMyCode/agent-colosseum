@@ -242,7 +242,10 @@ export function simulate(
       opponentBoosting: false,
     };
     const atkAction = decideAction(atkStrat, atkCtx, "attacker");
-    const powerAttack = atkAction === "power_attack";
+    // Real charges/perks ALWAYS override the strategy: a boost only fires if the
+    // fighter actually has a speed-boost charge left. "boost every hit" can't
+    // conjure charges out of thin air.
+    const powerAttack = atkAction === "power_attack" && atk.boostRemaining > 0;
     if (powerAttack) {
       atk.boostRemaining -= 1;
       atk.boostUsed += 1;
@@ -262,7 +265,10 @@ export function simulate(
       opponentBoosting: powerAttack,
     };
     const defAction = decideAction(defStrat, defCtx, "defender");
-    const dodged = defAction === "dodge";
+    // Real charges/perks ALWAYS override the strategy: a fighter can only dodge
+    // while it has a dodge charge. If the strategy says "dodge" but dodge_charges
+    // is 0, the hit lands for full damage.
+    const dodged = defAction === "dodge" && def.dodgeRemaining > 0;
     if (dodged) {
       def.dodgeRemaining -= 1;
       def.dodgeUsed += 1;
@@ -485,20 +491,20 @@ function simulateBiased(
       },
       "attacker"
     );
-    const powerAttack = atkAction === "power_attack";
+    // Real charges override the bias too: no charge → no boost.
+    const powerAttack = atkAction === "power_attack" && atk.boostRemaining > 0;
     if (powerAttack) {
       atk.boostRemaining -= 1;
       atk.boostUsed += 1;
     }
 
-    // Bias: the favoured fighter's hits always land and it never takes damage
-    // (it avoids every incoming hit, spending a dodge charge when it has one).
-    const dodged = defender === forced;
+    // Bias: the favoured fighter avoids incoming hits — but ONLY while it still
+    // has dodge charges. Once they run out it takes damage like anyone else, so
+    // the replay never shows a dodge the fighter couldn't actually afford.
+    const dodged = defender === forced && def.dodgeRemaining > 0;
     if (dodged) {
-      if (def.dodgeRemaining > 0) {
-        def.dodgeRemaining -= 1;
-        def.dodgeUsed += 1;
-      }
+      def.dodgeRemaining -= 1;
+      def.dodgeUsed += 1;
       if (powerAttack) atk.powerAttacksDodged += 1;
     }
 

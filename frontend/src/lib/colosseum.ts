@@ -62,6 +62,7 @@ export type Match = {
   winner: string | null;
   champion: string | null;
   bank: bigint;
+  championName: string | null;
 };
 
 export type Config = {
@@ -236,6 +237,7 @@ export function parseMatch(raw: unknown): Match | null {
     winner: optActor(o.winner),
     champion: optActor(o.champion),
     bank: toBig(o.bank),
+    championName: null, // will be populated in BattleModal using agents list
   };
 }
 
@@ -522,6 +524,23 @@ export async function exitMatch(
   const svc = getService(sails);
   const tx = svc.functions.ExitMatch(matchId);
   await runTx(tx, signArgs);
+}
+
+/**
+ * Opt into a decision-phase rematch. Once both the champion and the current
+ * challenger call this, the same match re-arms to Ready for another bout. The
+ * challenger re-stakes from their wallet (`stake` attached as value); the
+ * champion is bankrolled by the accumulated bank, so they attach nothing.
+ */
+export async function fightAgain(
+  sails: any,
+  signArgs: SignArgs,
+  matchId: number,
+  stake?: bigint
+): Promise<void> {
+  const svc = getService(sails);
+  const tx = svc.functions.FightAgain(matchId);
+  await runTx(tx, signArgs, stake);
 }
 
 export async function declareRematch(

@@ -24,12 +24,19 @@ import { useColosseum } from "@/providers/colosseum-provider";
 import { useWallet } from "@/providers/chain-provider";
 import { useTx } from "@/hooks/use-tx";
 import {
+  DEFAULT_STRATEGY,
+  validateStrategy,
+  type Strategy,
+} from "@/lib/strategy";
+import {
   actorIdToAddress,
   claimBank,
   claimWinnings,
   closeMatch,
   declareRematch,
   deriveStrategyHash,
+  exitMatch,
+  fightAgain,
   formatVara,
   joinMatch,
   sameActor,
@@ -43,6 +50,25 @@ import {
 
 const FALLBACK: BodyParts = { head_type: 0, body_type: 0, arms_type: 0, legs_type: 0 };
 const STEPS: MatchStatus[] = ["Waiting", "Ready", "Completed", "Claimed", "Closed"];
+
+/** Strategy presets served from /strategies/*.json */
+const STRATEGY_FILES = ["default", "aggressive", "tank", "counter"] as const;
+const STRATEGY_LABELS: Record<(typeof STRATEGY_FILES)[number], string> = {
+  default: "Default Brawler",
+  aggressive: "Aggressive",
+  tank: "Tank",
+  counter: "Counter",
+};
+
+async function fetchStrategy(url: string): Promise<Strategy | null> {
+  try {
+    const res = await fetch(url);
+    const json = await res.json();
+    return validateStrategy(json) ? json : null;
+  } catch {
+    return null;
+  }
+}
 
 function partsFor(agents: Agent[], id: string | null): BodyParts {
   if (!id) return FALLBACK;
@@ -71,6 +97,47 @@ export function BattleModal({
   const [runKey, setRunKey] = useState(0);
   const [countdown, setCountdown] = useState(0);
   const [rematchCountdown, setRematchCountdown] = useState(0);
+  const [showDecision, setShowDecision] = useState(false);
+  const [decisionCountdown, setDecisionCountdown] = useState(0);
+  // True after THIS user has opted into a rematch and is waiting for the
+  // opponent to do the same (the contract re-arms once both have called).
+  const [fightAgainPending, setFightAgainPending] = useState(false);
+
+  // Strategy chosen for the NEXT bout (used to drive the local preview/auto
+  // simulation). Presets are loaded from /strategies/*.json on open; the
+  // selection persists across Fight Again so the next bout reuses it.
+  const [loadedStrategies, setLoadedStrategies] = useState<
+    { name: string; strategy: Strategy }[]
+  >([]);
+  const [selectedStrategy, setSelectedStrategy] = useState<Strategy>(DEFAULT_STRATEGY);
+  const [strategyMode, setStrategyMode] = useState("Default Brawler");
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      const results: { name: string; strategy: Strategy }[] = [];
+      for (const file of STRATEGY_FILES) {
+        const s = await fetchStrategy(`/strategies/${file}.json`);
+        if (cancelled) return;
+        if (s) results.push({ name: STRATEGY_LABELS[file], strategy: s });
+      }
+      if (cancelled) return;
+      if (results.length === 0) {
+        results.push({ name: "Default Brawler", strategy: DEFAULT_STRATEGY });
+      }
+      setLoadedStrategies(results);
+      setSelectedStrategy((prev) => {
+        // Keep an explicit user choice; otherwise seat the default preset.
+        if (prev !== DEFAULT_STRATEGY) return prev;
+        const def = results.find((r) => r.strategy.name === "default-brawler");
+        return def?.strategy ?? results[0].strategy;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   const match = useMemo(
     () => matches.find((m) => m.id === matchId) ?? null,
@@ -89,13 +156,31 @@ export function BattleModal({
       const forced = sameActor(match.winner, match.agentA) ? "a" : "b";
       return simulateForcedWinner(aP, bP, seed, forced);
     }
-    return simulate(aP, bP, undefined, undefined, seed);
-  }, [match, agents]);
+    // Apply the chosen strategy to whichever side the current user fights on so
+    // the preview/auto-play reflects the selection made before Fight Again.
+    const aStrat = sameActor(myActorId, match.agentA) ? selectedStrategy : undefined;
+    const bStrat = sameActor(myActorId, match.agentB) ? selectedStrategy : undefined;
+    return simulate(aP, bP, aStrat, bStrat, seed);
+  }, [match, agents, myActorId, selectedStrategy]);
 
   // Collapse the replay whenever a different match is opened.
   useEffect(() => {
     setWatching(false);
+    setShowDecision(false);
+    setFightAgainPending(false);
   }, [matchId]);
+
+  // A re-arm (both participants opted into Fight Again) flips the match back to
+  // Ready with a fresh seed. Tear down the decision UI and the stale replay so
+  // the new bout gets its own 10s countdown and auto-animation.
+  useEffect(() => {
+    if (match?.status === "Ready") {
+      setShowDecision(false);
+      setFightAgainPending(false);
+      setBattleDone(false);
+      setWatching(false);
+    }
+  }, [match?.id, match?.seed, match?.status]);
 
   // 10-second countdown after match becomes Ready before owner can resolve
   // (guarded: skip when match is null — hooks must still be called)
@@ -136,11 +221,24 @@ export function BattleModal({
         pending: "Closing match…",
         success: "Match closed",
         action: (sails, signArgs) => closeMatch(sails, signArgs, match!.id),
-      }).catch(() => {
+      }).then(() => refresh()).catch(() => {
         // Ignore auto-close errors
       });
     }
   }, [rematchCountdown, match?.status]);
+
+  // 60-second countdown after SetBattleResult for decision phase
+  useEffect(() => {
+    if (decisionCountdown <= 0) return;
+    const t = setInterval(() => setDecisionCountdown((c) => c - 1), 1000);
+    return () => clearInterval(t);
+  }, [decisionCountdown]);
+
+  useEffect(() => {
+    if (decisionCountdown === 1 && showDecision) {
+      setShowDecision(false);
+    }
+  }, [decisionCountdown, showDecision]);
 
   // Auto-play battle animation when countdown expires
   useEffect(() => {
@@ -160,6 +258,9 @@ export function BattleModal({
   const aWon = sameActor(match.winner, match.agentA);
   const bWon = sameActor(match.winner, match.agentB);
   const isChampion = match.champion ? sameActor(myActorId, match.champion) : false;
+  const championName = match.champion
+    ? agents.find((a) => sameActor(a.agentId, match.champion))?.name ?? "Champion"
+    : null;
   const decided = match.status === "Completed" || match.status === "Claimed" || (match.status === "Waiting" && Boolean(match.champion));
 
   const isCreator = sameActor(myActorId, match.agentA);
@@ -179,6 +280,7 @@ export function BattleModal({
       successMessage: () => "The battle is set.",
       action: (sails, signArgs) => joinMatch(sails, signArgs, match!.id, match!.stake),
     });
+    refresh();
   }
 
   async function claim() {
@@ -188,7 +290,10 @@ export function BattleModal({
       successMessage: (r) => String(r),
       action: (sails, signArgs) => claimWinnings(sails, signArgs, match!.id),
     });
-    if (res !== null) onClose();
+    if (res !== null) {
+      refresh();
+      onClose();
+    }
   }
 
   async function resolve() {
@@ -197,7 +302,7 @@ export function BattleModal({
     const winner = winnerSide === "a" ? match.agentA : match.agentB;
     if (!winner) return;
     const hash = await deriveStrategyHash(`${match!.id}:${winner}:${match!.seed}`);
-    await run({
+    const result = await run({
       pending: "Recording battle result…",
       success: "Result recorded",
       successMessage: () =>
@@ -205,7 +310,96 @@ export function BattleModal({
       action: (sails, signArgs) =>
         setBattleResult(sails, signArgs, match!.id, winner, hash),
     });
+    if (result !== null) {
+      refresh();
+      setShowDecision(true);
+      setDecisionCountdown(60);
+    }
   }
+
+  // Opt into another bout. The champion is bankrolled by the accumulated bank
+  // (no value attached); the challenger re-stakes from their wallet. The match
+  // only re-arms once BOTH sides have called — until then we wait.
+  async function doFightAgain() {
+    const res = await run({
+      pending: "Declaring fight again…",
+      success: "Rematch declared",
+      successMessage: () => "Waiting for opponent to confirm…",
+      action: (sails, signArgs) =>
+        fightAgain(sails, signArgs, match!.id, isChampion ? undefined : match!.stake),
+    });
+    if (res !== null) {
+      setFightAgainPending(true);
+      refresh();
+    }
+  }
+
+  // Step out of the decision phase. A champion stepping down frees the arena;
+  // a challenger leaving keeps the champion seated. Either way we close the modal.
+  async function doExit() {
+    const res = await run({
+      pending: "Exiting match…",
+      success: "Exited match",
+      action: (sails, signArgs) => exitMatch(sails, signArgs, match!.id),
+    });
+    if (res !== null) {
+      setShowDecision(false);
+      refresh();
+      onClose();
+    }
+  }
+
+  // Champion cashes out the accumulated bank, ending the run.
+  async function doClaimBank() {
+    const claimed = await run({
+      pending: "Claiming bank…",
+      success: "Bank claimed",
+      successMessage: () => `Claimed ${formatVara(match!.bank)} VARA`,
+      action: (sails, signArgs) => claimBank(sails, signArgs, match!.id),
+    });
+    if (claimed !== null) {
+      setShowDecision(false);
+      refresh();
+      onClose();
+    }
+  }
+
+  // Tear down the arena entirely. Available to match participants (and the
+  // contract owner); the match moves to Closed and we dismiss the modal.
+  async function doCloseMatch() {
+    const res = await run({
+      pending: "Closing match…",
+      success: "Match closed",
+      action: (sails, signArgs) => closeMatch(sails, signArgs, match!.id),
+    });
+    if (res !== null) {
+      setShowDecision(false);
+      refresh();
+      onClose();
+    }
+  }
+
+  // Strategy selector shown before a Fight Again, plus the close-match button —
+  // shared across the champion/challenger decision branches.
+  const strategyPicker = (
+    <StrategyPicker
+      strategies={loadedStrategies}
+      mode={strategyMode}
+      onChange={(mode, strat) => {
+        setStrategyMode(mode);
+        setSelectedStrategy(strat);
+      }}
+    />
+  );
+  const closeMatchButton = (
+    <button
+      onClick={doCloseMatch}
+      disabled={busy}
+      className="btn-ghost w-full !py-2.5 !text-xs"
+    >
+      {busy ? "Closing…" : "Close Match"}
+    </button>
+  );
 
   return (
     <Modal
@@ -321,7 +515,10 @@ export function BattleModal({
           {match.status === "Waiting" && !match.champion && (
             <>
               {isCreator ? (
-                <Hint>You opened this match — waiting for a challenger to stake {formatVara(match.stake)} VARA.</Hint>
+                <div className="space-y-2">
+                  <Hint>You opened this match — waiting for a challenger to stake {formatVara(match.stake)} VARA.</Hint>
+                  {closeMatchButton}
+                </div>
               ) : !account ? (
                 <Hint>Connect a wallet to accept this challenge.</Hint>
               ) : !registered ? (
@@ -352,43 +549,144 @@ export function BattleModal({
 
           {match.status === "Waiting" && match.champion && (
             <>
-              {isChampion ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-center gap-2 rounded-xl border border-ember-500/25 bg-ember-500/[0.06] px-4 py-3">
-                    <Crown size={18} weight="fill" className="text-ember-400" />
-                    <span className="font-display font-bold text-ember-200">🏆 You are champion!</span>
+              {showDecision ? (
+                <div className="space-y-4">
+                  {/* Decision countdown */}
+                  <div className="flex items-center justify-center gap-2 rounded-xl border border-plasma-500/25 bg-plasma-500/[0.06] px-4 py-3">
+                    <span className="font-display text-lg font-bold text-plasma-300">{decisionCountdown}</span>
+                    <span className="text-sm text-zinc-400">seconds to decide</span>
+                    <Lightning size={16} weight="fill" className="text-plasma-400 animate-pulse" />
                   </div>
-                  <div className="text-sm text-zinc-400">
-                    Bank: <span className="text-ember-200 font-bold">{formatVara(match.bank)}</span>
+
+                  {/* Champion info */}
+                  <div className="flex items-center justify-center gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] px-4 py-3">
+                    <Crown size={20} weight="fill" className="text-ember-400" />
+                    <span className="font-display text-base font-bold text-ember-200">
+                      🏆 {isChampion ? "You are champion!" : `${championName || "Champion"} is champion!`}
+                    </span>
                   </div>
-                  <button
-                    onClick={async () => {
-                      const claimed = await run({
-                        pending: "Claiming bank…",
-                        success: "Bank claimed",
-                        successMessage: () => `Claimed ${formatVara(match.bank)} VARA`,
-                        action: (sails, signArgs) => claimBank(sails, signArgs, match!.id),
-                      });
-                      if (claimed !== null) onClose();
-                    }}
-                    disabled={busy}
-                    className="btn-ember w-full !py-3"
-                  >
-                    <Coins size={18} weight="fill" />
-                    {busy ? "Claiming…" : `Claim Bank · ${formatVara(match.bank)} VARA`}
-                  </button>
+
+                  {/* Bank display */}
+                  <div className="text-center text-sm text-zinc-400">
+                    Bank: <span className="text-ember-200 font-bold">{formatVara(match.bank)} VARA</span>
+                    {isChampion && (
+                      <span className="block text-xs text-zinc-500 mt-1">
+                        Fight again to defend your bank, or claim your winnings
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Decision buttons */}
+                  {fightAgainPending ? (
+                    <WaitingForOpponent isChampion={isChampion} />
+                  ) : isParticipant ? (
+                    <div className="space-y-2">
+                      {strategyPicker}
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={doFightAgain}
+                          disabled={busy}
+                          className="btn-plasma !py-2.5"
+                        >
+                          <ArrowsClockwise size={16} weight="fill" />
+                          {busy
+                            ? "Declaring…"
+                            : isChampion
+                              ? "Fight Again"
+                              : `Fight Again · ${formatVara(match.stake)} VARA`}
+                        </button>
+                        {isChampion ? (
+                          <button
+                            onClick={doClaimBank}
+                            disabled={busy}
+                            className="btn-ember !py-2.5"
+                          >
+                            <Coins size={16} weight="fill" />
+                            {busy ? "Claiming…" : `Claim Bank · ${formatVara(match.bank)} VARA`}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={doExit}
+                            disabled={busy}
+                            className="btn-ghost !py-2.5"
+                          >
+                            {busy ? "Exiting…" : "Exit Match"}
+                          </button>
+                        )}
+                      </div>
+                      {isChampion && closeMatchButton}
+                    </div>
+                  ) : (
+                    <Hint>Waiting for participants to decide…</Hint>
+                  )}
                 </div>
-              ) : !account ? (
-                <Hint>Connect a wallet to challenge the champion.</Hint>
-              ) : !registered ? (
-                <Hint>Forge an agent before stepping into the arena.</Hint>
               ) : (
-                <div className="space-y-3">
-                  <button onClick={join} disabled={busy} className="btn-plasma w-full !py-3">
-                    <Sword size={18} weight="fill" />
-                    {busy ? "Joining…" : `Challenge Champion · ${formatVara(match.stake)} VARA`}
-                  </button>
-                </div>
+                <>
+                  {isChampion ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-center gap-2 rounded-xl border border-ember-500/25 bg-ember-500/[0.06] px-4 py-3">
+                        <Crown size={18} weight="fill" className="text-ember-400" />
+                        <span className="font-display font-bold text-ember-200">🏆 You are champion!</span>
+                      </div>
+                      <div className="text-center text-sm text-zinc-400">
+                        Bank: <span className="text-ember-200 font-bold">{formatVara(match.bank)} VARA</span>
+                      </div>
+                      {fightAgainPending ? (
+                        <WaitingForOpponent isChampion />
+                      ) : (
+                        <div className="space-y-2">
+                          {strategyPicker}
+                          <div className="grid grid-cols-2 gap-2">
+                            <button onClick={doFightAgain} disabled={busy} className="btn-plasma !py-2.5">
+                              <ArrowsClockwise size={16} weight="fill" />
+                              {busy ? "Declaring…" : "Fight Again"}
+                            </button>
+                            <button onClick={doClaimBank} disabled={busy} className="btn-ember !py-2.5">
+                              <Coins size={16} weight="fill" />
+                              {busy ? "Claiming…" : `Claim Bank · ${formatVara(match.bank)} VARA`}
+                            </button>
+                          </div>
+                          {closeMatchButton}
+                        </div>
+                      )}
+                    </div>
+                  ) : isParticipant ? (
+                    /* The just-beaten challenger reopened the modal — offer a rematch or exit. */
+                    <div className="space-y-3">
+                      <div className="text-center text-sm text-zinc-400">
+                        {championName || "Champion"} holds the arena · Bank{" "}
+                        <span className="text-ember-200 font-bold">{formatVara(match.bank)} VARA</span>
+                      </div>
+                      {fightAgainPending ? (
+                        <WaitingForOpponent isChampion={false} />
+                      ) : (
+                        <div className="space-y-2">
+                          {strategyPicker}
+                          <div className="grid grid-cols-2 gap-2">
+                            <button onClick={doFightAgain} disabled={busy} className="btn-plasma !py-2.5">
+                              <ArrowsClockwise size={16} weight="fill" />
+                              {busy ? "Declaring…" : `Fight Again · ${formatVara(match.stake)} VARA`}
+                            </button>
+                            <button onClick={doExit} disabled={busy} className="btn-ghost !py-2.5">
+                              {busy ? "Exiting…" : "Exit Match"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : !account ? (
+                    <Hint>Connect a wallet to challenge the champion.</Hint>
+                  ) : !registered ? (
+                    <Hint>Forge an agent before stepping into the arena.</Hint>
+                  ) : (
+                    <div className="space-y-3">
+                      <button onClick={join} disabled={busy} className="btn-plasma w-full !py-3">
+                        <Sword size={18} weight="fill" />
+                        {busy ? "Joining…" : `Challenge Champion · ${formatVara(match.stake)} VARA`}
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </>
           )}
@@ -471,6 +769,7 @@ export function BattleModal({
                           success: "Match closed",
                           action: (sails, signArgs) => closeMatch(sails, signArgs, match!.id),
                         });
+                        refresh();
                       }}
                       disabled={busy}
                       className="btn-ghost !py-2.5"
@@ -595,6 +894,91 @@ function Metric({
         {value}
       </div>
       <div className="text-[10px] uppercase tracking-wider text-zinc-600">{label}</div>
+    </div>
+  );
+}
+
+function WaitingForOpponent({ isChampion }: { isChampion: boolean }) {
+  return (
+    <div className="flex items-center justify-center gap-2 rounded-xl border border-plasma-500/25 bg-plasma-500/[0.06] px-4 py-3">
+      <ArrowsClockwise size={16} weight="bold" className="text-plasma-300 animate-spin-slow" />
+      <span className="text-sm text-zinc-300">
+        Waiting for {isChampion ? "challenger" : "champion"} to confirm rematch…
+      </span>
+    </div>
+  );
+}
+
+function StrategyPicker({
+  strategies,
+  mode,
+  onChange,
+}: {
+  strategies: { name: string; strategy: Strategy }[];
+  mode: string;
+  onChange: (mode: string, strategy: Strategy) => void;
+}) {
+  const [json, setJson] = useState("");
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  if (strategies.length === 0) return null;
+  return (
+    <div className="rounded-xl border hairline bg-white/[0.02] p-3 space-y-2 text-left">
+      <label className="block font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+        Strategy for the next bout
+      </label>
+      <select
+        value={mode}
+        onChange={(e) => {
+          const v = e.target.value;
+          setJsonError(null);
+          if (v === "json") {
+            onChange(v, DEFAULT_STRATEGY);
+            return;
+          }
+          const preset = strategies.find((p) => p.name === v);
+          onChange(v, preset?.strategy ?? DEFAULT_STRATEGY);
+        }}
+        className="field !text-xs !py-2"
+      >
+        {strategies.map((p) => (
+          <option key={p.name} value={p.name}>
+            {p.name}
+          </option>
+        ))}
+        <option value="json">Paste JSON…</option>
+      </select>
+      {mode === "json" && (
+        <div>
+          <textarea
+            value={json}
+            onChange={(e) => {
+              const text = e.target.value;
+              setJson(text);
+              if (!text.trim()) {
+                setJsonError(null);
+                return;
+              }
+              try {
+                const parsed = JSON.parse(text);
+                if (validateStrategy(parsed)) {
+                  onChange("json", parsed);
+                  setJsonError(null);
+                } else {
+                  setJsonError("Invalid strategy JSON");
+                }
+              } catch {
+                setJsonError("Invalid strategy JSON");
+              }
+            }}
+            rows={4}
+            placeholder='{"name":"my-strat","version":1,"rules":{"dodge":[],"powerAttack":[]}}'
+            className="field !text-xs !py-2 font-mono"
+          />
+          {jsonError && (
+            <p className="mt-1 font-mono text-[10px] text-red-400">{jsonError}</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }

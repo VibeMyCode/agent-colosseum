@@ -30,9 +30,11 @@ type MatchView = struct {
   status: MatchStatus,
   seed: u64,
   winner: opt actor_id,
+  champion: opt actor_id,
+  bank: u128,
 };
 
-/// Lifecycle of a match: Waiting → Ready → Completed → Claimed.
+/// Lifecycle of a match: Waiting → Ready → Completed → Claimed or Closed.
 type MatchStatus = enum {
   /// Created by agent A, awaiting a second participant.
   Waiting,
@@ -42,6 +44,8 @@ type MatchStatus = enum {
   Completed,
   /// Winner has claimed the payout.
   Claimed,
+  /// Match closed; view-only.
+  Closed,
 };
 
 constructor {
@@ -51,21 +55,36 @@ constructor {
 };
 
 service AgentColosseum {
+  /// Champion claims accumulated bank, closing the match.
+  /// Only the champion may call this function.
+  ClaimBank : (match_id: u64) -> u128;
   /// Claim winnings for a Completed match. Only the recorded winner may claim.
   /// 
   /// v1: records the payout against the winner's lifetime earnings and returns
   /// a status string. The actual VARA transfer is deferred to v2.
   ClaimWinnings : (match_id: u64) -> str;
+  /// Close a match. Only callable by match participants or contract owner.
+  /// Match must be in Ready, Waiting, or Completed status.
+  CloseMatch : (match_id: u64) -> null;
   /// Create a match as agent A, staking `stake` (must be covered by attached
   /// value). Returns the new match id.
   CreateMatch : (stake: u128) -> u64;
-  /// Join a waiting match as agent B, matching the stake with attached value.
+  /// Declare intent to rematch. Both participants must call within 60s of Completed status
+  /// to auto-create a new match with the same stake. Only callable by match participants.
+  DeclareRematch : (match_id: u64) -> null;
+  /// Exit a match. Any participant may call this.
+  /// If the champion exits, their bank is cleared and champion is set to None.
+  /// Match status returns to Waiting if it was in Ready; otherwise stays in current state.
+  ExitMatch : (match_id: u64) -> null;
+  /// Join a waiting match. If no champion exists, joiner joins as agent B in a normal match.
+  /// If a champion exists, joiner becomes the challenger against the champion.
   JoinMatch : (match_id: u64) -> null;
   /// Register the caller as an agent. One agent per account; the agent id is
   /// the caller's `ActorId`. `body_parts` are cosmetic-only.
   RegisterAgent : (name: str, body_parts: BodyParts, strategy_hash: [u8, 32], strategy_url: str) -> actor_id;
-  /// Record the outcome of a Ready match. OWNER-only: the off-chain battle
-  /// engine is trusted to run the simulation and submit the verified result.
+  /// Record the outcome of a Ready match. The owner or either match
+  /// participant (agent A or B) may submit the verified result.
+  /// Winner becomes the champion; match status returns to Waiting with accumulated bank.
   SetBattleResult : (match_id: u64, winner: actor_id, timeline_hash: [u8, 32]) -> null;
   SetPaused : (paused: bool) -> null;
   SetProtocolFee : (fee_bps: u16) -> null;
@@ -107,6 +126,17 @@ service AgentColosseum {
       match_id: u64,
       winner: actor_id,
       payout: u128,
+    };
+    /// Champion claimed their accumulated bank, closing the match.
+    BankClaimed: struct {
+      match_id: u64,
+      champion: actor_id,
+      bank: u128,
+    };
+    /// A participant exited the match.
+    MatchExited: struct {
+      match_id: u64,
+      participant: actor_id,
     };
   }
 };
