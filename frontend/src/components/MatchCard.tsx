@@ -1,11 +1,15 @@
 import { motion } from "framer-motion";
-import { Coins, Crown, Question, LockKey } from "@phosphor-icons/react";
+import { Coins, Crown, Question, LockKey, HandCoins } from "@phosphor-icons/react";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { ShareLink } from "@/components/ui/ShareLink";
 import { useColosseum } from "@/providers/colosseum-provider";
-import { useChainApi } from "@/providers/chain-provider";
+import { useChainApi, useWallet } from "@/providers/chain-provider";
+import { useSails } from "@/hooks/use-sails";
+import { useTx } from "@/hooks/use-tx";
 import {
+  addressToActorId,
+  claimBank,
   formatVara,
   sameActor,
   type Agent,
@@ -36,14 +40,33 @@ export function MatchCard({
   match: Match;
   onOpen: (m: Match) => void;
 }) {
-  const { agents } = useColosseum();
+  const { agents, refresh } = useColosseum();
   const { programId } = useChainApi();
+  const { account, signer } = useWallet();
+  const { sails } = useSails();
+  const { run, busy } = useTx();
   const aParts = partsFor(agents, match.agentA) ?? FALLBACK;
   const bParts = partsFor(agents, match.agentB);
 
   const aWon = sameActor(match.winner, match.agentA);
   const bWon = sameActor(match.winner, match.agentB);
   const priv = isPrivate(programId, match.id);
+  const actorId = account ? addressToActorId(account.address) : null;
+  const isChampion = match.champion
+    ? sameActor(match.champion, actorId)
+    : false;
+
+  async function doClaimBank(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!sails || !account || !signer || busy) return;
+    await run({
+      pending: "Claiming bank…",
+      success: "Bank claimed",
+      successMessage: (r) => `Claimed ${formatVara(BigInt(String(r)))} VARA`,
+      action: (sails, signArgs) => claimBank(sails, signArgs, match.id),
+    });
+    refresh();
+  }
 
   return (
     <motion.div
@@ -116,13 +139,25 @@ export function MatchCard({
           </span>
         </div>
         {match.champion && match.bank > 0n && (
-          <div className="mt-2.5 flex items-center gap-2 border-t hairline pt-2.5">
-            <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600">
-              <Crown size={11} weight="fill" /> Bank
-            </span>
-            <span className="ml-auto font-display text-xs font-bold text-ember-200">
-              {formatVara(match.bank)} VARA
-            </span>
+          <div className="mt-2.5 space-y-2 border-t hairline pt-2.5">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1 text-[11px] text-zinc-600">
+                <Crown size={11} weight="fill" /> Bank
+              </span>
+              <span className="ml-auto font-display text-xs font-bold text-ember-200">
+                {formatVara(match.bank)} VARA
+              </span>
+            </div>
+            {isChampion && match.status === "Waiting" && (
+              <button
+                onClick={doClaimBank}
+                disabled={busy}
+                className="btn-ember w-full !py-1.5 !text-[11px]"
+              >
+                <HandCoins size={12} weight="fill" />
+                {busy ? "Claiming…" : `Claim ${formatVara(match.bank)} VARA`}
+              </button>
+            )}
           </div>
         )}
         {priv && (

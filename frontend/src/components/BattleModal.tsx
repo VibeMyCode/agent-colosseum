@@ -723,6 +723,13 @@ export function BattleModal({
                   )}
                 </div>
               ) : null}
+
+              {/* Close Match in Ready state for participants/owner */}
+              {(isParticipant || isOwner) && (
+                <div className="border-t border-white/10 pt-3">
+                  {closeMatchButton}
+                </div>
+              )}
             </>
           )}
 
@@ -777,6 +784,13 @@ export function BattleModal({
                       Close
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* Close Match in Completed state for participants/owner */}
+              {(isParticipant || isOwner) && (
+                <div className="border-t border-white/10 pt-3">
+                  {closeMatchButton}
                 </div>
               )}
             </>

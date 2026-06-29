@@ -669,8 +669,9 @@ impl AgentColosseum {
                     EXITED.retain(|(id, _)| id != &match_id);
                     FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
                 } else if Some(caller) == champion {
-                    // Champion alone steps down: arena loses its champion and bank,
-                    // the remaining player stays in an open Waiting match.
+                    // Champion steps down: claim the accumulated bank before
+                    // freeing the arena for the remaining player.
+                    let bank_amount = m.bank;
                     let other = if caller == agent_a { agent_b } else { agent_a };
                     m.agent_a = other;
                     m.agent_b = ActorId::zero();
@@ -679,6 +680,19 @@ impl AgentColosseum {
                     m.winner = None;
                     m.status = MatchStatus::Waiting;
                     FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                    if bank_amount > 0 {
+                        if let Some((_, config)) =
+                            AGENTS.iter_mut().find(|(id, _)| id == &caller)
+                        {
+                            config.total_earned += bank_amount;
+                        }
+                        self.emit_event(Event::BankClaimed {
+                            match_id,
+                            champion: caller,
+                            bank: bank_amount,
+                        })
+                        .expect("failed to emit BankClaimed");
+                    }
                 } else {
                     // Challenger/loser leaves; the champion keeps their seat and
                     // bank. Free the challenger slot for a new challenger.
@@ -738,36 +752,60 @@ impl AgentColosseum {
                 }
             };
 
-            if FIGHT_AGAIN
+            let already = FIGHT_AGAIN
                 .iter()
-                .any(|(id, a)| id == &match_id && a == &caller)
-            {
-                panic!("AlreadyDeclaredFightAgain");
-            }
-            FIGHT_AGAIN.push((match_id, caller));
+                .any(|(id, a)| id == &match_id && a == &caller);
 
-            if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &caller) {
-                config.total_staked += stake;
-            }
-
-            // Re-arm once both present participants have opted in.
-            let a_in = FIGHT_AGAIN
-                .iter()
-                .any(|(id, x)| id == &match_id && x == &agent_a);
-            let b_in = FIGHT_AGAIN
-                .iter()
-                .any(|(id, x)| id == &match_id && x == &agent_b);
-            if a_in && b_in {
-                let now = exec::block_timestamp();
-                if let Some((_, m)) = MATCHES.iter_mut().find(|(id, _)| id == &match_id) {
-                    m.status = MatchStatus::Ready;
-                    m.seed = now;
-                    m.winner = None;
-                    m.timeline_hash = None;
-                    rearmed_challenger = Some(m.agent_b);
+            if already {
+                // Already declared — idempotent. Still re-check if both sides
+                // have now declared (the other participant may have called
+                // between our first and second attempt).
+                let a_in = FIGHT_AGAIN
+                    .iter()
+                    .any(|(id, x)| id == &match_id && x == &agent_a);
+                let b_in = FIGHT_AGAIN
+                    .iter()
+                    .any(|(id, x)| id == &match_id && x == &agent_b);
+                if a_in && b_in {
+                    let now = exec::block_timestamp();
+                    if let Some((_, m)) =
+                        MATCHES.iter_mut().find(|(id, _)| id == &match_id)
+                    {
+                        m.status = MatchStatus::Ready;
+                        m.seed = now;
+                        m.winner = None;
+                        m.timeline_hash = None;
+                        rearmed_challenger = Some(m.agent_b);
+                    }
+                    FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                    EXITED.retain(|(id, _)| id != &match_id);
                 }
-                FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
-                EXITED.retain(|(id, _)| id != &match_id);
+            } else {
+                FIGHT_AGAIN.push((match_id, caller));
+
+                if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &caller) {
+                    config.total_staked += stake;
+                }
+
+                // Re-arm once both present participants have opted in.
+                let a_in = FIGHT_AGAIN
+                    .iter()
+                    .any(|(id, x)| id == &match_id && x == &agent_a);
+                let b_in = FIGHT_AGAIN
+                    .iter()
+                    .any(|(id, x)| id == &match_id && x == &agent_b);
+                if a_in && b_in {
+                    let now = exec::block_timestamp();
+                    if let Some((_, m)) = MATCHES.iter_mut().find(|(id, _)| id == &match_id) {
+                        m.status = MatchStatus::Ready;
+                        m.seed = now;
+                        m.winner = None;
+                        m.timeline_hash = None;
+                        rearmed_challenger = Some(m.agent_b);
+                    }
+                    FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                    EXITED.retain(|(id, _)| id != &match_id);
+                }
             }
         }
         if let Some(agent_b) = rearmed_challenger {
@@ -865,9 +903,14 @@ impl AgentColosseum {
                         panic!("InvalidMatchStatus");
                     }
                     m.status = MatchStatus::Closed;
+                    m.champion = None;
+                    m.bank = 0;
+                    m.winner = None;
 
-                    // Clear any pending rematch intents for this match
+                    // Clear any pending intents for this match
                     REMATCH_INTENTS.retain(|(id, _)| id != &match_id);
+                    FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
+                    EXITED.retain(|(id, _)| id != &match_id);
                 }
                 None => panic!("MatchNotFound"),
             }
