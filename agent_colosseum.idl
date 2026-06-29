@@ -72,10 +72,21 @@ service AgentColosseum {
   /// Declare intent to rematch. Both participants must call within 60s of Completed status
   /// to auto-create a new match with the same stake. Only callable by match participants.
   DeclareRematch : (match_id: u64) -> null;
-  /// Exit a match. Any participant may call this.
-  /// If the champion exits, their bank is cleared and champion is set to None.
-  /// Match status returns to Waiting if it was in Ready; otherwise stays in current state.
+  /// Exit a match during the decision phase (or a Ready bout).
+  /// 
+  /// Decision-phase rules:
+  /// * One participant exits → the match stays Waiting with its champion (and
+  ///   bank) intact, the leaver's slot is freed so a new challenger can join.
+  /// * Both participants exit → the match is Closed.
+  /// * A champion stepping down alone clears the champion/bank and leaves the
+  ///   remaining player in an open Waiting match.
   ExitMatch : (match_id: u64) -> null;
+  /// Decision-phase mutual rematch. The champion keeps their seat (bankrolled
+  /// from the accumulated bank) while the current challenger re-stakes from
+  /// their wallet. Once BOTH the champion and the challenger have opted in, the
+  /// match re-arms to Ready with a fresh seed for another bout — no new match,
+  /// the bank carries over.
+  FightAgain : (match_id: u64) -> null;
   /// Join a waiting match. If no champion exists, joiner joins as agent B in a normal match.
   /// If a champion exists, joiner becomes the challenger against the champion.
   JoinMatch : (match_id: u64) -> null;
