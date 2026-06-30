@@ -10,13 +10,9 @@
 //!
 //! v1 scope notes:
 //! * Betting is intentionally NOT part of v1 (no bets, no bet pool).
-//! * `claim_winnings` records the payout and returns a status string. The
-//!   actual VARA transfer to the winner is deferred to v2.
+//! * `claim_winnings` transfers the net payout to the winner on-chain.
 //! * Body parts are COSMETIC-ONLY in v1: they are stored and surfaced for the
 //!   UI/avatar but have no effect on match outcomes or any economics.
-
-extern crate alloc;
-use alloc::format;
 
 use sails_rs::gstd::{exec, msg};
 use sails_rs::prelude::*;
@@ -545,11 +541,9 @@ impl AgentColosseum {
     }
 
     /// Claim winnings for a Completed match. Only the recorded winner may claim.
-    ///
-    /// v1: records the payout against the winner's lifetime earnings and returns
-    /// a status string. The actual VARA transfer is deferred to v2.
+    /// Transfers the net payout (total_pool minus protocol fee) to the winner.
     #[export]
-    pub fn claim_winnings(&mut self, match_id: u64) -> String {
+    pub fn claim_winnings(&mut self, match_id: u64) {
         let caller = msg::source();
         let (winner, payout) = unsafe {
             let (winner, payout) = {
@@ -579,18 +573,18 @@ impl AgentColosseum {
             }
             (winner, payout)
         };
+        // Transfer the net payout to the winner on-chain (no longer deferred).
+        msg::send_bytes(winner, [], payout).expect("FailedToTransferWinnings");
         self.emit_event(Event::ClaimedWinnings {
             match_id,
             winner,
             payout,
         })
         .expect("failed to emit ClaimedWinnings");
-        // v2: transfer `payout` to `winner` via value transfer.
-        format!("Claimed:{}", payout)
     }
 
     /// Champion claims accumulated bank, closing the match.
-    /// Only the champion may call this function.
+    /// Only the champion may call this function. Transfers the bank to champion.
     #[export]
     pub fn claim_bank(&mut self, match_id: u64) -> u128 {
         let caller = msg::source();
@@ -616,6 +610,10 @@ impl AgentColosseum {
                 None => panic!("MatchNotFound"),
             }
         };
+        // Transfer the bank to the champion on-chain.
+        if bank > 0 {
+            msg::send_bytes(caller, [], bank).expect("FailedToTransferBank");
+        }
         self.emit_event(Event::BankClaimed {
             match_id,
             champion: caller,
@@ -959,6 +957,18 @@ impl AgentColosseum {
     #[export]
     pub fn get_config(&self) -> (u16, bool, u64) {
         unsafe { (PROTOCOL_FEE_BPS, PAUSED, NEXT_MATCH_ID) }
+    }
+
+    /// Verify a timeline_hash against a match's stored hash.
+    /// Returns true if the match exists and its timeline_hash matches `claimed_hash`.
+    #[export]
+    pub fn verify_battle_result(&self, match_id: u64, claimed_hash: [u8; 32]) -> bool {
+        unsafe {
+            match MATCHES.iter().find(|(id, _)| id == &match_id) {
+                Some((_, m)) => m.timeline_hash == Some(claimed_hash),
+                None => false,
+            }
+        }
     }
 
     // ─── Admin (OWNER only) ───────────────────────────────────────────
