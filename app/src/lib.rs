@@ -623,11 +623,11 @@ impl AgentColosseum {
     /// Exit a match during the decision phase (or a Ready bout).
     ///
     /// Decision-phase rules:
-    /// * One participant exits → the match stays Waiting with its champion (and
-    ///   bank) intact, the leaver's slot is freed so a new challenger can join.
-    /// * Both participants exit → the match is Closed.
-    /// * A champion stepping down alone clears the champion/bank and leaves the
-    ///   remaining player in an open Waiting match.
+    /// - One participant exits: the match stays Waiting with its champion
+    ///   and bank intact. The leaver's slot frees for a new challenger.
+    /// - Both participants exit: the match is Closed.
+    /// - A champion stepping down alone clears the champion/bank and leaves
+    ///   the remaining player in an open Waiting match.
     #[export]
     pub fn exit_match(&mut self, match_id: u64) {
         let caller = msg::source();
