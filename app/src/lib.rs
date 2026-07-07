@@ -363,7 +363,7 @@ impl AgentColosseum {
     #[export]
     pub fn create_match(&mut self, stake: u128) -> u64 {
         let operator = msg::source();
-        if stake < MIN_STAKE || stake > MAX_STAKE {
+        if !(MIN_STAKE..=MAX_STAKE).contains(&stake) {
             panic!("InvalidStake");
         }
         if msg::value() < stake {
