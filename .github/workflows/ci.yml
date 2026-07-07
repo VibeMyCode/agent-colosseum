@@ -33,15 +33,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-all-crates: false
-          key: v2
+          key: v3
+
+      - name: Clean stale artifacts
+        run: rm -rf target/wasm-projects target/release/build target/release/.fingerprint
 
       - name: Cargo fmt
         run: cargo fmt -- --check
 
       - name: Cargo clippy
-        run: |
-          cargo clippy --release -p agent-colosseum-app -- -D warnings
-          cargo clippy --release -p agent-colosseum-client -- -D warnings
+        run: cargo clippy --release --workspace --exclude agent-colosseum -- -D warnings
 
       - name: Cargo build
         run: cargo build --release
