@@ -153,7 +153,10 @@ async fn set_battle_result_auth() {
         .set_battle_result(match_id, AGENT_A.into(), [9u8; 32])
         .with_actor_id(AGENT_A.into())
         .await;
-    assert!(res.is_ok(), "participant should be able to set battle result");
+    assert!(
+        res.is_ok(),
+        "participant should be able to set battle result"
+    );
 
     // But a stranger cannot
     let match_id2 = service
@@ -619,7 +622,10 @@ async fn close_match_unauthorized_fails() {
         .close_match(match_id)
         .with_actor_id(STRANGER.into())
         .await;
-    assert!(res.is_err(), "non-participant non-owner should not close match");
+    assert!(
+        res.is_err(),
+        "non-participant non-owner should not close match"
+    );
 }
 
 /// Test persistent champion: first match winner becomes champion.

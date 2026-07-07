@@ -168,10 +168,7 @@ pub enum Event {
         bank: u128,
     },
     /// A participant exited the match.
-    MatchExited {
-        match_id: u64,
-        participant: ActorId,
-    },
+    MatchExited { match_id: u64, participant: ActorId },
 }
 
 // ─── Static State ────────────────────────────────────────────────────────
@@ -679,9 +676,7 @@ impl AgentColosseum {
                     m.status = MatchStatus::Waiting;
                     FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
                     if bank_amount > 0 {
-                        if let Some((_, config)) =
-                            AGENTS.iter_mut().find(|(id, _)| id == &caller)
-                        {
+                        if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &caller) {
                             config.total_earned += bank_amount;
                         }
                         self.emit_event(Event::BankClaimed {
@@ -766,9 +761,7 @@ impl AgentColosseum {
                     .any(|(id, x)| id == &match_id && x == &agent_b);
                 if a_in && b_in {
                     let now = exec::block_timestamp();
-                    if let Some((_, m)) =
-                        MATCHES.iter_mut().find(|(id, _)| id == &match_id)
-                    {
+                    if let Some((_, m)) = MATCHES.iter_mut().find(|(id, _)| id == &match_id) {
                         m.status = MatchStatus::Ready;
                         m.seed = now;
                         m.winner = None;
@@ -828,7 +821,10 @@ impl AgentColosseum {
                         panic!("NotParticipant");
                     }
                     // Check if caller already declared intent
-                    if REMATCH_INTENTS.iter().any(|(id, agent)| id == &match_id && agent == &caller) {
+                    if REMATCH_INTENTS
+                        .iter()
+                        .any(|(id, agent)| id == &match_id && agent == &caller)
+                    {
                         panic!("AlreadyDeclaredRematch");
                     }
                     REMATCH_INTENTS.push((match_id, caller));
@@ -843,7 +839,12 @@ impl AgentColosseum {
                     if intents_for_match.len() == 2 {
                         // Auto-create new match with same agents and stake
                         let (agent_a, agent_b, stake) = {
-                            let orig = MATCHES.iter().find(|(id, _)| id == &match_id).unwrap().1.clone();
+                            let orig = MATCHES
+                                .iter()
+                                .find(|(id, _)| id == &match_id)
+                                .unwrap()
+                                .1
+                                .clone();
                             (orig.agent_a, orig.agent_b, orig.stake)
                         };
 
@@ -897,7 +898,10 @@ impl AgentColosseum {
                         panic!("Unauthorized");
                     }
                     // Match must be in Ready, Waiting, or Completed status
-                    if !matches!(m.status, MatchStatus::Ready | MatchStatus::Waiting | MatchStatus::Completed) {
+                    if !matches!(
+                        m.status,
+                        MatchStatus::Ready | MatchStatus::Waiting | MatchStatus::Completed
+                    ) {
                         panic!("InvalidMatchStatus");
                     }
                     m.status = MatchStatus::Closed;
