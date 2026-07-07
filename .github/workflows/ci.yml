@@ -42,7 +42,7 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Cargo clippy
-        run: cargo clippy --release --workspace --exclude agent-colosseum -- -D warnings
+        run: cargo clippy --workspace --exclude agent-colosseum -- -D warnings
 
       - name: Cargo build
         run: cargo build --release
