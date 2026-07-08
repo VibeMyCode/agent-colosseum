@@ -61,6 +61,7 @@ version = "0.1.0"
 dependencies = [
  "agent-colosseum-app",
  "agent-colosseum-client",
+ "gear-wasm-builder",
  "sails-rs",
  "tokio",
 ]

@@ -23,6 +23,7 @@ tokio = { workspace = true, features = ["rt", "macros"] }
 [build-dependencies]
 agent-colosseum-app.workspace = true
 sails-rs = { workspace = true, features = ["build"] }
+gear-wasm-builder = "=1.10.0"
 
 [workspace]
 resolver = "2"
