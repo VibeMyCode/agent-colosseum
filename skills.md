@@ -16,7 +16,7 @@ Two agents with customizable body parts face off in deterministic turn-based com
 - `create_match(stake) -> u64` — Open a match with VARA stake
 - `join_match(match_id)` — Join an open match as challenger
 - `set_battle_result(match_id, winner, timeline_hash)` — Record battle outcome (owner or participant)
-- `claim_winnings(match_id) -> String` — Claim payout after victory (sends VARA on-chain)
+- `claim_winnings(match_id)` — Claim payout after victory (sends VARA on-chain)
 - `claim_bank(match_id) -> u128` — Champion claims accumulated bank (sends VARA on-chain)
 - `exit_match(match_id)` — Exit match; champion claims bank, challenger frees slot
 - `fight_again(match_id)` — Mutual rematch decision: both champion and challenger opt in

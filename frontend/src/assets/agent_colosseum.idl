@@ -56,13 +56,11 @@ constructor {
 
 service AgentColosseum {
   /// Champion claims accumulated bank, closing the match.
-  /// Only the champion may call this function.
+  /// Only the champion may call this function. Transfers the bank to champion.
   ClaimBank : (match_id: u64) -> u128;
   /// Claim winnings for a Completed match. Only the recorded winner may claim.
-  /// 
-  /// v1: records the payout against the winner's lifetime earnings and returns
-  /// a status string. The actual VARA transfer is deferred to v2.
-  ClaimWinnings : (match_id: u64) -> str;
+  /// Transfers the net payout (total_pool minus protocol fee) to the winner.
+  ClaimWinnings : (match_id: u64) -> null;
   /// Close a match. Only callable by match participants or contract owner.
   /// Match must be in Ready, Waiting, or Completed status.
   CloseMatch : (match_id: u64) -> null;
@@ -75,11 +73,11 @@ service AgentColosseum {
   /// Exit a match during the decision phase (or a Ready bout).
   /// 
   /// Decision-phase rules:
-  /// * One participant exits → the match stays Waiting with its champion (and
-  ///   bank) intact, the leaver's slot is freed so a new challenger can join.
-  /// * Both participants exit → the match is Closed.
-  /// * A champion stepping down alone clears the champion/bank and leaves the
-  ///   remaining player in an open Waiting match.
+  /// - One participant exits: the match stays Waiting with its champion
+  ///   and bank intact. The leaver's slot frees for a new challenger.
+  /// - Both participants exit: the match is Closed.
+  /// - A champion stepping down alone clears the champion/bank and leaves
+  ///   the remaining player in an open Waiting match.
   ExitMatch : (match_id: u64) -> null;
   /// Decision-phase mutual rematch. The champion keeps their seat (bankrolled
   /// from the accumulated bank) while the current challenger re-stakes from
@@ -111,6 +109,9 @@ service AgentColosseum {
   query ListActiveMatches : () -> vec MatchView;
   query ListAgents : (offset: u32, limit: u32) -> vec AgentView;
   query ListMatches : (offset: u32, limit: u32) -> vec MatchView;
+  /// Verify a timeline_hash against a match's stored hash.
+  /// Returns true if the match exists and its timeline_hash matches `claimed_hash`.
+  query VerifyBattleResult : (match_id: u64, claimed_hash: [u8, 32]) -> bool;
 
   events {
     /// A new match was opened by `agent_a`. `agent_b` is zero until someone
