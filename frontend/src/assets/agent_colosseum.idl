@@ -58,9 +58,6 @@ service AgentColosseum {
   /// Champion claims accumulated bank, closing the match.
   /// Only the champion may call this function. Transfers the bank to champion.
   ClaimBank : (match_id: u64) -> u128;
-  /// Claim winnings for a Completed match. Only the recorded winner may claim.
-  /// Transfers the net payout (total_pool minus protocol fee) to the winner.
-  ClaimWinnings : (match_id: u64) -> null;
   /// Close a match. Only callable by match participants or contract owner.
   /// Match must be in Ready, Waiting, or Completed status.
   CloseMatch : (match_id: u64) -> null;
@@ -132,12 +129,6 @@ service AgentColosseum {
       match_id: u64,
       winner: actor_id,
       timeline_hash: [u8, 32],
-    };
-    /// The winner claimed the pooled payout (stake*2 minus protocol fee).
-    ClaimedWinnings: struct {
-      match_id: u64,
-      winner: actor_id,
-      payout: u128,
     };
     /// Champion claimed their accumulated bank, closing the match.
     BankClaimed: struct {

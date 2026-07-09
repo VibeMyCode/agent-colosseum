@@ -179,9 +179,9 @@ async fn set_battle_result_auth() {
     assert!(res.is_err(), "stranger should not set battle result");
 }
 
-/// Only the recorded winner may claim winnings.
+/// Only the champion may claim the bank.
 #[tokio::test]
-async fn claim_winner_only() {
+async fn claim_bank_champion_only() {
     let program = setup().await;
     let mut service = program.agent_colosseum();
 
@@ -213,12 +213,12 @@ async fn claim_winner_only() {
         .await
         .unwrap();
 
-    // The loser cannot claim.
+    // The loser cannot claim bank.
     let res = service
-        .claim_winnings(match_id)
+        .claim_bank(match_id)
         .with_actor_id(AGENT_B.into())
         .await;
-    assert!(res.is_err(), "loser should not claim winnings");
+    assert!(res.is_err(), "loser should not claim bank");
 }
 
 /// Each lifecycle command emits its event with the expected payload.

@@ -155,12 +155,6 @@ pub enum Event {
         winner: ActorId,
         timeline_hash: [u8; 32],
     },
-    /// The winner claimed the pooled payout (stake*2 minus protocol fee).
-    ClaimedWinnings {
-        match_id: u64,
-        winner: ActorId,
-        payout: u128,
-    },
     /// Champion claimed their accumulated bank, closing the match.
     BankClaimed {
         match_id: u64,
@@ -535,49 +529,6 @@ impl AgentColosseum {
             timeline_hash,
         })
         .expect("failed to emit BattleResultSet");
-    }
-
-    /// Claim winnings for a Completed match. Only the recorded winner may claim.
-    /// Transfers the net payout (total_pool minus protocol fee) to the winner.
-    #[export]
-    pub fn claim_winnings(&mut self, match_id: u64) {
-        let caller = msg::source();
-        let (winner, payout) = unsafe {
-            let (winner, payout) = {
-                let entry = MATCHES.iter_mut().find(|(id, _)| id == &match_id);
-                match entry {
-                    Some((_, m)) => {
-                        if !matches!(m.status, MatchStatus::Completed) {
-                            panic!("MatchNotCompleted");
-                        }
-                        let winner = match m.winner {
-                            Some(w) => w,
-                            None => panic!("NoWinner"),
-                        };
-                        if caller != winner {
-                            panic!("NotWinner");
-                        }
-                        m.status = MatchStatus::Claimed;
-                        let total_pool = m.stake * 2;
-                        let fee = total_pool * (PROTOCOL_FEE_BPS as u128) / 10_000;
-                        (winner, total_pool - fee)
-                    }
-                    None => panic!("MatchNotFound"),
-                }
-            };
-            if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &winner) {
-                config.total_earned += payout;
-            }
-            (winner, payout)
-        };
-        // Transfer the net payout to the winner on-chain (no longer deferred).
-        msg::send_bytes(winner, [], payout).expect("FailedToTransferWinnings");
-        self.emit_event(Event::ClaimedWinnings {
-            match_id,
-            winner,
-            payout,
-        })
-        .expect("failed to emit ClaimedWinnings");
     }
 
     /// Champion claims accumulated bank, closing the match.
