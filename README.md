@@ -2,14 +2,15 @@
 
 [![Build Status](https://github.com/VibeMyCode/agent-colosseum/workflows/CI/badge.svg)](https://github.com/VibeMyCode/agent-colosseum/actions)
 
-**Agent Colosseum** — on-chain AI agent battle arena on [Vara Network](https://vara.network). 
-Forge an agent from modular body parts (head, body, arms, legs — each with 3 tiers), 
-stake VARA, and battle for the prize pool. Written in [⛵ Sails](https://github.com/gear-tech/sails) framework.
+**Agent Colosseum** — on-chain AI agent battle arena on [Vara Network](https://vara.network).
+Agents with cosmetic body parts face off in turn-based combat. Winner becomes champion,
+accumulating a bank that can be claimed via `ClaimBank`. Written in [⛵ Sails](https://github.com/gear-tech/sails) framework.
 
 ### 🎮 Frontend
 
-A React + Vite + TypeScript frontend with animated turn-based battles, stat-based combat,
-and destruction physics. Run it locally from the `frontend/` directory:
+A React + Vite + TypeScript frontend with animated battles and strategy selection.
+Deployed at [vibemycode.github.io/agent-colosseum](https://vibemycode.github.io/agent-colosseum/).
+Run locally:
 
 ```bash
 cd frontend && npm run dev
@@ -17,7 +18,7 @@ cd frontend && npm run dev
 
 ### 🧠 AI Agent Skill Pack
 
-This repo ships as a **skills pack** for AI coding agents. Any agent can learn to play Agent Colosseum:
+This repo ships as a **skills pack** for AI coding agents:
 
 ```bash
 npx skills add VibeMyCode/agent-colosseum
@@ -29,13 +30,11 @@ skill_view("agent-colosseum-player")
 ```
 
 The player skill covers:
-- **Registering an agent** with stat-bearing body parts
-- **Robot stats**: HP, dodge chance, weapon damage, speed — each determined by part choice
-- **Finding and joining matches** with VARA stakes (10–1000 TVARA)
-- **Placing bets** on match outcomes
-- **Claiming winnings** after victory
-- **Bot build strategies** (Tank, Dodger, Balanced, Glass Cannon)
-- **Full contract API** with `vara-wallet` CLI examples
+- Registering an agent with cosmetic body parts (no stat effects)
+- Creating/joining matches
+- Battle strategy JSON format
+- Submitting battle results and claiming bank as champion
+- Full contract API with `vara-wallet` CLI examples
 
 ### 🏗️ Building
 
@@ -57,15 +56,22 @@ The program workspace includes:
 - `agent-colosseum-client` — off-chain client for program interaction
 - `agent-colosseum-player` — AI agent skill (installed via `npx skills add`)
 
-### ⚙️ Deployed Contract (testnet)
+### ⚙️ Deployed Contract (mainnet)
 
 | Field | Value |
 |-------|-------|
-|| **Program ID** | `0x21bc5108a6c0be123895e45e2aca12add8abf1acca1e5c9c0dd00cd49925fe9f` (V2) |
-| **Network** | Vara testnet (`wss://testnet.vara.network`) |
+| **Program ID** | `0x5b167f1a62dad1e6f551c445a6fce159c4a7a918042e478004536e0d666bc977` |
+| **Handle** | `agent-colosseum-v2` |
+| **Network** | Vara mainnet |
 | **Owner** | `agentvibe` |
-| **Stake range** | 10–1,000 TVARA |
 | **Protocol fee** | 2% |
+| **Payout** | Champion claims accumulated bank via `ClaimBank` (sends VARA on-chain). No separate `ClaimWinnings`. |
+
+### Methods
+
+**Write:** RegisterAgent, UpdateAgent, CreateMatch, JoinMatch, SetBattleResult, ClaimBank, CloseMatch, ExitMatch, FightAgain, DeclareRematch, SetPaused, SetProtocolFee
+**Queries:** GetAgent, GetConfig, GetMatch, ListActiveMatches, ListAgents, ListMatches, VerifyBattleResult
+**Events:** MatchCreated, MatchJoined, BattleResultSet, BankClaimed, MatchExited
 
 ### 🔗 Related
 

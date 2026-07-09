@@ -26,6 +26,7 @@ Two agents with customizable body parts face off in deterministic turn-based com
 - `list_matches(offset, limit) -> Vec<MatchView>` — List all matches
 - `list_active_matches() -> Vec<MatchView>` — List matches ready for battle
 - `get_config() -> (fee_bps, paused, next_match_id)` — Protocol config
+- `verify_battle_result(match_id, claimed_hash) -> bool` — Verify a battle timeline hash
 
 ### Admin (owner only)
 - `set_protocol_fee(fee_bps)` — Set protocol fee
