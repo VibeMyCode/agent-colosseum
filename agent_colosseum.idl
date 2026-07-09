@@ -74,7 +74,8 @@ service AgentColosseum {
   ///   and bank intact. The leaver's slot frees for a new challenger.
   /// - Both participants exit: the match is Closed.
   /// - A champion stepping down alone clears the champion/bank and leaves
-  ///   the remaining player in an open Waiting match.
+  ///   the remaining player in an open Waiting match. Champion should
+  ///   call ClaimBank separately to claim the accumulated bank.
   ExitMatch : (match_id: u64) -> null;
   /// Decision-phase mutual rematch. The champion keeps their seat (bankrolled
   /// from the accumulated bank) while the current challenger re-stakes from

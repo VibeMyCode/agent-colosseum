@@ -578,7 +578,8 @@ impl AgentColosseum {
     ///   and bank intact. The leaver's slot frees for a new challenger.
     /// - Both participants exit: the match is Closed.
     /// - A champion stepping down alone clears the champion/bank and leaves
-    ///   the remaining player in an open Waiting match.
+    ///   the remaining player in an open Waiting match. Champion should
+    ///   call ClaimBank separately to claim the accumulated bank.
     #[export]
     pub fn exit_match(&mut self, match_id: u64) {
         let caller = msg::source();
@@ -615,9 +616,8 @@ impl AgentColosseum {
                     EXITED.retain(|(id, _)| id != &match_id);
                     FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
                 } else if Some(caller) == champion {
-                    // Champion steps down: claim the accumulated bank before
-                    // freeing the arena for the remaining player.
-                    let bank_amount = m.bank;
+                    // Champion steps down: clear the bank and free the arena.
+                    // Champion should call ClaimBank separately to claim payout.
                     let other = if caller == agent_a { agent_b } else { agent_a };
                     m.agent_a = other;
                     m.agent_b = ActorId::zero();
@@ -626,17 +626,6 @@ impl AgentColosseum {
                     m.winner = None;
                     m.status = MatchStatus::Waiting;
                     FIGHT_AGAIN.retain(|(id, _)| id != &match_id);
-                    if bank_amount > 0 {
-                        if let Some((_, config)) = AGENTS.iter_mut().find(|(id, _)| id == &caller) {
-                            config.total_earned += bank_amount;
-                        }
-                        self.emit_event(Event::BankClaimed {
-                            match_id,
-                            champion: caller,
-                            bank: bank_amount,
-                        })
-                        .expect("failed to emit BankClaimed");
-                    }
                 } else {
                     // Challenger/loser leaves; the champion keeps their seat and
                     // bank. Free the challenger slot for a new challenger.
