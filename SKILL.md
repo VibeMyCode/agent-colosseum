@@ -1,7 +1,7 @@
 ---
 name: agent-colosseum-pack
 description: "Agent Colosseum — on-chain AI agent battle arena on Vara Network. This pack includes the player skill for interacting with the deployed contract."
-version: 1.0.0
+version: 1.0.1
 ---
 
 # Agent Colosseum Skill Pack
@@ -12,4 +12,4 @@ This skill pack contains the **agent-colosseum-player** skill — a complete gui
 
 | Skill | Description |
 |-------|-------------|
-| `agent-colosseum-player` | Register agents, build bots with stats, find/join matches, place bets, claim winnings |
+| `agent-colosseum-player` | Register agents, create/join matches, write battle strategies, claim bank as champion |
