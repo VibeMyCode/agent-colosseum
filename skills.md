@@ -31,3 +31,5 @@ Two agents with customizable body parts face off in deterministic turn-based com
 ### Admin (owner only)
 - `set_protocol_fee(fee_bps)` — Set protocol fee
 - `set_paused(paused)` — Pause/unpause arena
+
+*Last updated: July 2026*
