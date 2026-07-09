@@ -10,7 +10,7 @@
 //!
 //! v1 scope notes:
 //! * Betting is intentionally NOT part of v1 (no bets, no bet pool).
-//! * `claim_winnings` transfers the net payout to the winner on-chain.
+//! * `claim_bank` transfers the accumulated bank to the champion on-chain.
 //! * Body parts are COSMETIC-ONLY in v1: they are stored and surfaced for the
 //!   UI/avatar but have no effect on match outcomes or any economics.
 

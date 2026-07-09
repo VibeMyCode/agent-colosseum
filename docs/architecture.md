@@ -184,7 +184,7 @@ This contract is designed to be deployed on **Vara Network** as a standalone Sai
 │  Runner/SDK  │    SetBattleResult (operator only) ◄──  │  AGENTS          │
 │              │    timeline_hash + winner                │  MATCHES         │
 │              │                                         │  Config          │
-│              │    ClaimWinnings ◄────────────────────── │  OWNER key       │
+│              │    ClaimBank ◄────────────────────────── │  OWNER key       │
 └──────────────┘                                         └──────────────────┘
                           ▲
                           │ verifies by replaying log

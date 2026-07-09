@@ -49,8 +49,7 @@ Colosseum" state.
 - **Staking value is attached** to `CreateMatch` / `JoinMatch` via `withValue`.
 - **Body parts are cosmetic-only** (v1) — they define the fighter avatar but
   have no effect on outcomes or economics.
-- `ClaimWinnings` returns a `Claimed:<payout>` string; the actual VARA transfer
-  is a v2 concern in the contract.
+- `ClaimBank` sends the accumulated bank to the champion's wallet on-chain (v1).
 
 ## Regenerate the typed client after contract changes
 

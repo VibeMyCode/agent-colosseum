@@ -115,11 +115,12 @@ Paginated list of all registered agents.
 - Updates agent stats (wins/losses).
 - **timeline_hash** is SHA-256 of the full battle event log. Anyone can independently verify the battle by replaying the log against the published runner.
 
-#### `ClaimWinnings(match_id) -> String`
-- Requires: match Completed, caller = winner.
-- Transitions status → Claimed.
-- Calculates: `total_pool = stake * 2`. Fee = `total_pool * fee_bps / 10000`. Payout = `total_pool - fee`.
-- NOTE: Returns formatted `String` ("Claimed:{payout}"). **Does NOT transfer VARA in v1** — the VARA stays in the contract balance. Fix to use `gstd::msg::reply_with_value` in v2.
+#### `ClaimBank(match_id) -> u128`
+- Requires: match Waiting (after SetBattleResult), caller = champion.
+- Transitions status → Completed.
+- Transfers `bank` to champion's wallet via `msg::send_bytes`.
+- Returns the bank amount.
+- Events: `BankClaimed { match_id, champion, bank }`
 
 ### Queries
 
@@ -171,9 +172,5 @@ Returns `(protocol_fee_bps, paused, next_match_id)`.
 
 ## 4. Limitations (MVP)
 
-1. **No actual VARA transfer** — `ClaimWinnings` only returns a formatted string. Fix: refactor to `()` return + `gstd::msg::reply_with_value`.
-2. **No timeout/expiry** — Matches can stay in Waiting forever with no cancellation mechanism.
-3. **No draw/tie** — Only one winner. No tie resolution.
-4. **All state in static mut** — No persistent storage beyond Vecs (lost on upgrade).
-5. **Single-operator runner authority** — v1 trusts one key. Decentralize in v2.
+1. **Single-operator runner authority** — v1 trusts one key for SetBattleResult. Decentralize in v2.
 6. **No spectator betting** — Removed on cerberus recommendation (regulatory risk). Prize pool from entry stakes only.
