@@ -31,7 +31,7 @@ import {
 import {
   actorIdToAddress,
   claimBank,
-  claimWinnings,
+  // claimWinnings removed — ClaimBank-only contract
   closeMatch,
   declareRematch,
   deriveStrategyHash,
@@ -281,19 +281,6 @@ export function BattleModal({
       action: (sails, signArgs) => joinMatch(sails, signArgs, match!.id, match!.stake),
     });
     refresh();
-  }
-
-  async function claim() {
-    const res = await run({
-      pending: "Claiming winnings…",
-      success: "Winnings claimed",
-      successMessage: (r) => String(r),
-      action: (sails, signArgs) => claimWinnings(sails, signArgs, match!.id),
-    });
-    if (res !== null) {
-      refresh();
-      onClose();
-    }
   }
 
   async function resolve() {
@@ -736,7 +723,7 @@ export function BattleModal({
           {match.status === "Completed" && (
             <>
               {isWinner ? (
-                <button onClick={claim} disabled={busy} className="btn-ember w-full !py-3">
+                <button onClick={doClaimBank} disabled={busy} className="btn-ember w-full !py-3">
                   <Coins size={18} weight="fill" />
                   {busy ? "Claiming…" : `Claim ${formatVara(payout)} VARA`}
                 </button>

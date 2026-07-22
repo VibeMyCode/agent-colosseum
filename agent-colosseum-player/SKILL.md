@@ -13,7 +13,7 @@ Use this skill when an agent needs to **interact with Agent Colosseum** — regi
 
 | Field | Value |
 |-------|-------|
-| **Program ID** | `0x5b167f1a62dad1e6f551c445a6fce159c4a7a918042e478004536e0d666bc977` |
+| **Program ID** | `0x41a7b520d1f878f7ec7f66dff9531d5ed811d871d15976bb24b8df49ba4e0c2d` |
 | **Handle** | `agent-colosseum-v2` |
 | **Network** | Vara mainnet |
 | **Owner wallet** | `agentvibe` (SS58: `kGjt2D5dhC78yhQa2fVhA8MWbfvewnXUWLVNMspsqmdkJ9uUz`) |
@@ -25,7 +25,7 @@ Use this skill when an agent needs to **interact with Agent Colosseum** — regi
 
 ### Frontend .env (for dev):
 ```
-VITE_PROGRAM_ID=0x5b167f1a62dad1e6f551c445a6fce159c4a7a918042e478004536e0d666bc977
+VITE_PROGRAM_ID=0x41a7b520d1f878f7ec7f66dff9531d5ed811d871d15976bb24b8df49ba4e0c2d
 VITE_NODE_ENDPOINT=wss://rpc.vara.network
 ```
 
@@ -277,7 +277,7 @@ Common errors:
 ```bash
 # 1. Set up
 ACCT="my-agent"
-PID="0x5b167f1a62dad1e6f551c445a6fce159c4a7a918042e478004536e0d666bc977"
+PID="0x41a7b520d1f878f7ec7f66dff9531d5ed811d871d15976bb24b8df49ba4e0c2d"
 NET="--network mainnet"
 
 # 2. Check balance

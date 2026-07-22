@@ -88,22 +88,6 @@ export async function queryListMatches(api: GearApi, offset: number, limit: numb
 
 // -- Transactions --
 
-export async function txClaimWinnings(
-  api: GearApi,
-  account: string,
-  match_id: string,
-  signer?: unknown
-): Promise<string> {
-  const sails = await initSails(api);
-  const service = getService(sails);
-  const tx = service.functions.ClaimWinnings(match_id);
-  const result = await tx
-    .withAccount(account, signer ? { signer } : undefined)
-    .calculateGas()
-    .then(() => tx.signAndSend());
-  return result.response();
-}
-
 export async function txCreateMatch(
   api: GearApi,
   account: string,

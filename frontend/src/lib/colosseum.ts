@@ -495,16 +495,6 @@ export async function setBattleResult(
   await runTx(tx, signArgs);
 }
 
-export async function claimWinnings(
-  sails: any,
-  signArgs: SignArgs,
-  matchId: number
-): Promise<string> {
-  const svc = getService(sails);
-  const tx = svc.functions.ClaimWinnings(matchId);
-  return (await runTx(tx, signArgs)) as string;
-}
-
 export async function claimBank(
   sails: any,
   signArgs: SignArgs,

@@ -60,7 +60,7 @@ The program workspace includes:
 
 | Field | Value |
 |-------|-------|
-| **Program ID** | `0x5b167f1a62dad1e6f551c445a6fce159c4a7a918042e478004536e0d666bc977` |
+| **Program ID** | `0x41a7b520d1f878f7ec7f66dff9531d5ed811d871d15976bb24b8df49ba4e0c2d` |
 | **Handle** | `agent-colosseum-v2` |
 | **Network** | Vara mainnet |
 | **Owner** | `agentvibe` |
